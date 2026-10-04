@@ -5,6 +5,10 @@ import CustomerLayout from './layouts/CustomerLayout';
 import AuthPage from './pages/AuthPage';
 import NotFound from './pages/NotFound';
 import Placeholder from './pages/Placeholder';
+import CartPage from './pages/CartPage';
+import MyOrdersPage from './pages/MyOrdersPage';
+import ProductPage from './pages/ProductPage';
+import ShopPage from './pages/ShopPage';
 
 export default function App() {
   return (
@@ -13,11 +17,13 @@ export default function App() {
       <Route path="/login" element={<AuthPage key="login" mode="login" />} />
       <Route path="/register" element={<AuthPage key="register" mode="register" />} />
 
-      {/* واجهة الزبون: الـ Shop مفتوح للكل */}
+            {/* واجهة الزبون: الـ Shop والسلة مفتوحين للكل */}
       <Route element={<CustomerLayout />}>
-        <Route path="/shop" element={<Placeholder title="Shop" />} />
+        <Route path="/shop" element={<ShopPage />} />
+        <Route path="/shop/:id" element={<ProductPage />} />
+        <Route path="/cart" element={<CartPage />} />
         <Route element={<RequireRole roles={['customer']} />}>
-          <Route path="/my-orders" element={<Placeholder title="My orders" />} />
+          <Route path="/my-orders" element={<MyOrdersPage />} />
         </Route>
       </Route>
 

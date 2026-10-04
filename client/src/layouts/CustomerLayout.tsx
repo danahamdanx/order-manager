@@ -1,10 +1,12 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { Logo } from '../components/Logo';
+import { useCart } from '../cart/useCart';
 
 export default function CustomerLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { count } = useCart();
 
   return (
     <div className="shell">
@@ -20,6 +22,10 @@ export default function CustomerLayout() {
           </nav>
 
           <div className="topbar-right">
+            <NavLink to="/cart" className="cart-link" aria-label={`Cart, ${count} items`}>
+            <i className="ti ti-shopping-cart" aria-hidden="true" />
+            {count > 0 && <b className="cart-badge" key={count}>{count}</b>}
+            </NavLink>
             {user ? (
               <>
                 {user.role !== 'customer' && (
