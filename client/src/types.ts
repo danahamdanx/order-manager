@@ -39,3 +39,29 @@ export interface Order {
   createdAt: string;
   items: OrderItem[];
 }
+
+export interface Stats {
+  totalOrders: number;
+  revenue: number;
+  customers: number;
+  byStatus: Record<Status, number>;
+}
+
+export interface Customer {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  createdAt: string;
+  ordersCount: number;
+  totalSpent: number;
+}
+
+export interface CustomerDetail {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  createdAt: string;
+  orders: Order[];
+}

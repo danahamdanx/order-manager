@@ -3,12 +3,15 @@ import { RequireRole } from './auth/RequireRole';
 import AdminLayout from './layouts/AdminLayout';
 import CustomerLayout from './layouts/CustomerLayout';
 import AuthPage from './pages/AuthPage';
-import NotFound from './pages/NotFound';
-import Placeholder from './pages/Placeholder';
 import CartPage from './pages/CartPage';
 import MyOrdersPage from './pages/MyOrdersPage';
+import NotFound from './pages/NotFound';
 import ProductPage from './pages/ProductPage';
 import ShopPage from './pages/ShopPage';
+import CustomerDetailPage from './pages/admin/CustomerDetailPage';
+import CustomersPage from './pages/admin/CustomersPage';
+import DashboardPage from './pages/admin/DashboardPage';
+import OrdersPage from './pages/admin/OrdersPage';
 
 export default function App() {
   return (
@@ -17,7 +20,6 @@ export default function App() {
       <Route path="/login" element={<AuthPage key="login" mode="login" />} />
       <Route path="/register" element={<AuthPage key="register" mode="register" />} />
 
-            {/* واجهة الزبون: الـ Shop والسلة مفتوحين للكل */}
       <Route element={<CustomerLayout />}>
         <Route path="/shop" element={<ShopPage />} />
         <Route path="/shop/:id" element={<ProductPage />} />
@@ -27,12 +29,12 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* لوحة الإدارة: admin و staff بس */}
       <Route path="/admin" element={<RequireRole roles={['admin', 'staff']} />}>
         <Route element={<AdminLayout />}>
-          <Route index element={<Placeholder title="Dashboard" />} />
-          <Route path="orders" element={<Placeholder title="Orders" />} />
-          <Route path="customers" element={<Placeholder title="Customers" />} />
+          <Route index element={<DashboardPage />} />
+          <Route path="orders" element={<OrdersPage />} />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="customers/:id" element={<CustomerDetailPage />} />
         </Route>
       </Route>
 
