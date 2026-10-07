@@ -5,8 +5,7 @@ export const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cance
 export type Status = (typeof STATUSES)[number];
 export type Role = 'admin' | 'staff' | 'customer';
 
-export const db = new Database('data.db');
-db.pragma('journal_mode = WAL');
+export const db = new Database(process.env.DB_FILE ?? 'data.db');db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
