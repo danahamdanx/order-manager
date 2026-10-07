@@ -4,6 +4,9 @@
 
 A full-stack order management app. Customers sign up, browse products, place orders and track them. Staff and admins manage orders and customers from a dashboard.
 
+![Shop](docs/screenshots/shop.png)
+![Dashboard](docs/screenshots/dashboard.png)
+
 ## Features
 
 **Customers**
