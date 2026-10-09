@@ -7,7 +7,11 @@
     "test": "vitest run",
     "dev": "tsx watch --env-file=.env src/index.ts",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "db:migrate": "tsx --env-file=.env db/run.ts migrate",
+    "db:seed": "tsx --env-file=.env db/run.ts seed",
+    "db:setup": "tsx --env-file=.env db/run.ts setup",
+    "db:reset": "tsx --env-file=.env db/run.ts reset"
   },
   "keywords": [],
   "author": "",
@@ -18,7 +22,8 @@
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
@@ -26,6 +31,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",

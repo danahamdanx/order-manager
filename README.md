@@ -69,6 +69,18 @@ On first start the API seeds demo data and prints the demo accounts:
 | admin    | admin@example.com | Admin123!    |
 | customer | lina@example.com  | Customer123! |
 
+## Database (PostgreSQL)
+
+```bash
+docker compose up -d                 # start PostgreSQL
+cd server
+cp .env.example .env                 # set JWT_SECRET, keep DATABASE_URL
+npm run db:setup                     # run migrations and seed demo data
+npm run db:reset                     # wipe and rebuild (local databases only)
+```
+
+Schema changes live in `server/db/migrations` as numbered SQL files. They run in order, each inside a transaction, and applied files are tracked in the `schema_migrations` table.
+
 ## Tests
 
 ```bash
