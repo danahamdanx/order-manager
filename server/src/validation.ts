@@ -10,6 +10,8 @@ export function parseOrderItems(items: unknown): { merged: Map<number, number>; 
     const { productId, quantity } = (it ?? {}) as { productId?: unknown; quantity?: unknown };
     if (
       !Number.isInteger(productId) ||
+      (productId as number) < 1 ||
+      (productId as number) > 2147483647 ||
       !Number.isInteger(quantity) ||
       (quantity as number) < 1 ||
       (quantity as number) > 20

@@ -1,5 +1,6 @@
 import request from 'supertest';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { pool } from '../../src/db';
 import app from '../../src/app';
 
 async function login(email: string, password: string) {
@@ -15,6 +16,10 @@ let customer: string;
 beforeAll(async () => {
   admin = await login('admin@example.com', 'Admin123!');
   customer = await login('lina@example.com', 'Customer123!');
+});
+
+afterAll(async () => {
+  await pool.end();
 });
 
 describe('authentication', () => {
@@ -116,5 +121,23 @@ describe('orders', () => {
   it('only lets an admin delete an order', async () => {
     expect((await request(app).delete('/api/orders/1').set(auth(customer))).status).toBe(403);
     expect((await request(app).delete('/api/orders/1').set(auth(admin))).status).toBe(204);
+  });
+
+    it('never oversells when two orders race for the same stock', async () => {
+    const stock = await stockOf(6);
+    const qty = Math.ceil(stock / 2) + 1; // طلبين مع بعض بيتجاوزوا المخزون
+    const [a, b] = await Promise.all([place([{ productId: 6, quantity: qty }]), place([{ productId: 6, quantity: qty }])]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await stockOf(6)).toBe(stock - qty);
+  });
+
+  it('returns 404 for an invalid order id instead of failing', async () => {
+    expect((await request(app).get('/api/orders/abc').set(auth(admin))).status).toBe(404);
+  });
+
+  it('searches orders without caring about letter case', async () => {
+    const res = await request(app).get('/api/orders?search=LINA').set(auth(admin));
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
   });
 });
