@@ -34,5 +34,6 @@ describe('parseOrderItems', () => {
     expect(parseOrderItems([{ productId: 1, quantity: 21 }]).error).toBeDefined();
     expect(parseOrderItems([{ productId: 1, quantity: 1.5 }]).error).toBeDefined();
     expect(parseOrderItems([{ quantity: 1 }]).error).toBeDefined();
+    expect(parseOrderItems([{ productId: 99999999999, quantity: 1 }]).error).toBeDefined();
   });
 });

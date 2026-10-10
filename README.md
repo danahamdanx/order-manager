@@ -30,7 +30,7 @@ A full-stack order management app. Customers sign up, browse products, place ord
 | -------- | ------------------------------------- |
 | Frontend | React, TypeScript, Vite, React Router |
 | Backend  | Node.js, Express, TypeScript          |
-| Database | SQLite (better-sqlite3)               |
+| Database | PostgreSQL (pg)                       |
 | Auth     | JWT, bcrypt                           |
 | Testing  | Vitest, Supertest                     |
 | CI       | GitHub Actions                        |
@@ -50,17 +50,24 @@ Customers register themselves. There is no public admin sign-up: the admin is se
 Requirements: Node.js 20 or newer.
 
 ```bash
+# Database
+docker compose up -d
+
 # API
 cd server
 npm install
-cp .env.example .env      # then set JWT_SECRET to a long random string
+cp .env.example .env      # set JWT_SECRET, keep DATABASE_URL
+npm run db:setup          # migrations + demo data
 npm run dev               # http://localhost:4000
+```
 
 # Web app (new terminal)
+
 cd client
 npm install
-npm run dev               # http://localhost:5173
-```
+npm run dev # http://localhost:5173
+
+````
 
 On first start the API seeds demo data and prints the demo accounts:
 
@@ -77,11 +84,19 @@ cd server
 cp .env.example .env                 # set JWT_SECRET, keep DATABASE_URL
 npm run db:setup                     # run migrations and seed demo data
 npm run db:reset                     # wipe and rebuild (local databases only)
-```
+````
 
 Schema changes live in `server/db/migrations` as numbered SQL files. They run in order, each inside a transaction, and applied files are tracked in the `schema_migrations` table.
 
 ## Tests
+
+Integration tests need an `orderdesk_test` database (see docker compose). Create it once with:
+
+```bash
+docker compose exec db psql -U orderdesk -d postgres -c "CREATE DATABASE orderdesk_test;"
+```
+
+Then run:
 
 ```bash
 cd server && npm test     # unit + integration (in-memory database)
