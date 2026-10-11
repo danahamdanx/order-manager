@@ -20,7 +20,8 @@ class HttpError extends Error {
 }
 
 const app = express();
-app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173' }));
+const allowedOrigins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((o) => o.trim());
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 // ---------- Types ----------
