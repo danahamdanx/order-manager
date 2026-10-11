@@ -67,8 +67,8 @@ const bind = (params: unknown[], value: unknown) => {
 };
 
 // id غير صالح بيرجع 404 بدل ما يوصل لقاعدة البيانات ويعمل خطأ
-function idOf(value: string | undefined): number {
-  const n = Number(value);
+function idOf(value: unknown): number {
+  const n = typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isInteger(n) || n < 1 || n > 2147483647) throw new HttpError(404, 'Not found');
   return n;
 }

@@ -6,7 +6,7 @@ const url = process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL is not set (see server/.env.example)');
 
 const commands = ['migrate', 'seed', 'setup', 'reset'];
-const command = process.argv[2];
+const command = process.argv[2]?? '';
 if (!commands.includes(command)) {
   console.error(`Usage: tsx db/run.ts <${commands.join('|')}>`);
   process.exit(1);

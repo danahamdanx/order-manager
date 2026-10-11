@@ -13,7 +13,8 @@
     "db:setup": "tsx --env-file=.env db/run.ts setup",
     "db:reset": "tsx --env-file=.env db/run.ts reset",
     "start": "tsx src/index.ts",
-    "db:migrate:prod": "tsx db/run.ts migrate"
+    "db:migrate:prod": "tsx db/run.ts migrate",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
