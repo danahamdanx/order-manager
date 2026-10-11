@@ -150,6 +150,30 @@ server/src
 server/tests  unit and integration tests
 ```
 
+## Live demo
+
+- App: https://order-manager-i0i9ubebk-dana-1151.vercel.app
+- API health: https://order-manager-1-w38n.onrender.com/api/health
+
+The API runs on a free plan and sleeps when idle, so the first request can take up to a minute.
+
+Demo accounts:
+
+| Role     | Email             | Password     |
+| -------- | ----------------- | ------------ |
+| customer | lina@example.com  | Customer123! |
+| admin    | admin@example.com | Admin123!    |
+
+## Deployment
+
+| Part     | Service                   |
+| -------- | ------------------------- |
+| Database | Neon (PostgreSQL)         |
+| API      | Render (Node web service) |
+| Web app  | Vercel                    |
+
+Environment variables: `DATABASE_URL`, `JWT_SECRET` and `CLIENT_ORIGIN` for the API; `VITE_API_URL` for the web app. Migrations run automatically when the API starts.
+
 ## Possible next steps
 
 - Pagination for orders and customers
