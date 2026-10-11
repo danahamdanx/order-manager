@@ -152,7 +152,7 @@ server/tests  unit and integration tests
 
 ## Live demo
 
-- App: https://order-manager-i0i9ubebk-dana-1151.vercel.app
+- App: https://order-manager-chi-six.vercel.app
 - API health: https://order-manager-1-w38n.onrender.com/api/health
 
 The API runs on a free plan and sleeps when idle, so the first request can take up to a minute.
