@@ -5,6 +5,7 @@ import { useCart } from '../cart/useCart';
 import { ProductTile } from '../components/ProductTile';
 import { money } from '../lib/format';
 import type { Product } from '../types';
+import { useSlowLoading } from '../lib/useSlowLoading';
 
 function ProductCard({ product }: { product: Product }) {
   const { add } = useCart();
@@ -52,6 +53,7 @@ export default function ShopPage() {
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState('');
   const [search, setSearch] = useState('');
+  const slow = useSlowLoading(loading);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,6 +115,11 @@ export default function ShopPage() {
         </div>
       </div>
 
+      {loading && (
+        <p className="muted">
+          {slow ? 'Waking up the server. The first visit can take up to a minute…' : 'Loading products…'}
+        </p>
+      )}
       {loading && <p className="muted">Loading products…</p>}
       {error && <p className="alert-error" role="alert">{error}</p>}
       {!loading && !error && visible.length === 0 && <p className="muted">No products found.</p>}

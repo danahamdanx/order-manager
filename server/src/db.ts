@@ -14,7 +14,15 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is not set. Add it to server/.env');
 }
 
-export const pool = new Pool({ connectionString, max: 10 });
+export const pool = new Pool({
+  connectionString,
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 15_000,
+});
+
+// الاتصالات الخاملة ممكن تنقطع (مثلًا لما قاعدة Neon تنام)، وهاد ما لازم يوقف السيرفر
+pool.on('error', (err) => console.error('PostgreSQL pool error:', err.message));
 
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
