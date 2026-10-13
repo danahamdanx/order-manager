@@ -20,6 +20,9 @@ export default function AdminLayout() {
           <NavLink to="/admin/orders">
             <i className="ti ti-package" aria-hidden="true" /> Orders
           </NavLink>
+          <NavLink to="/admin/products">
+            <i className="ti ti-box" aria-hidden="true" /> Products
+          </NavLink>
           <NavLink to="/admin/customers">
             <i className="ti ti-users" aria-hidden="true" /> Customers
           </NavLink>

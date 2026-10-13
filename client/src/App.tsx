@@ -12,6 +12,7 @@ import CustomerDetailPage from './pages/admin/CustomerDetailPage';
 import CustomersPage from './pages/admin/CustomersPage';
 import DashboardPage from './pages/admin/DashboardPage';
 import OrdersPage from './pages/admin/OrdersPage';
+import ProductsPage from './pages/admin/ProductsPage';
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
         <Route element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="orders" element={<OrdersPage />} />
+          <Route path="products" element={<ProductsPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="customers/:id" element={<CustomerDetailPage />} />
         </Route>

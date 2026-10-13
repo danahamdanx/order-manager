@@ -65,3 +65,26 @@ export interface CustomerDetail {
   createdAt: string;
   orders: Order[];
 }
+
+export const PRODUCT_COLORS = ['purple', 'blue', 'amber', 'teal', 'coral', 'pink'] as const;
+export const PRODUCT_ICONS = [
+  'package',
+  'keyboard',
+  'mouse',
+  'usb',
+  'device-laptop',
+  'device-desktop',
+  'camera',
+  'headphones',
+  'bulb',
+  'printer',
+  'router',
+  'microphone',
+  'device-mobile',
+  'device-watch',
+  'plug',
+] as const;
+
+export interface AdminProduct extends Product {
+  active: boolean;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEmail, parseOrderItems } from '../../src/validation';
+import { isValidEmail, parseOrderItems, parseProductInput } from '../../src/validation';
 
 describe('isValidEmail', () => {
   it('accepts normal addresses', () => {
@@ -35,5 +35,42 @@ describe('parseOrderItems', () => {
     expect(parseOrderItems([{ productId: 1, quantity: 1.5 }]).error).toBeDefined();
     expect(parseOrderItems([{ quantity: 1 }]).error).toBeDefined();
     expect(parseOrderItems([{ productId: 99999999999, quantity: 1 }]).error).toBeDefined();
+  });
+});
+
+describe('parseProductInput', () => {
+  const valid = { name: ' Desk Lamp ', category: 'Lighting', price: 24.5, stock: 10 };
+
+  it('accepts a valid new product and trims text', () => {
+    const { data, errors } = parseProductInput(valid, true);
+    expect(errors).toEqual([]);
+    expect(data.name).toBe('Desk Lamp');
+  });
+
+  it('requires the main fields when creating', () => {
+    expect(parseProductInput({}, true).errors.length).toBe(4);
+  });
+
+  it('allows partial updates', () => {
+    const { data, errors } = parseProductInput({ stock: 3 }, false);
+    expect(errors).toEqual([]);
+    expect(data).toEqual({ stock: 3 });
+  });
+
+  it('rejects bad prices, stock, colors, icons and flags', () => {
+    const bad = [
+      { price: 0 },
+      { price: -1 },
+      { price: 1.234 },
+      { price: '5' },
+      { stock: 1.5 },
+      { stock: -1 },
+      { color: 'red' },
+      { icon: 'Bad Icon!' },
+      { active: 'yes' },
+    ];
+    for (const body of bad) {
+      expect(parseProductInput(body, false).errors.length, JSON.stringify(body)).toBe(1);
+    }
   });
 });
