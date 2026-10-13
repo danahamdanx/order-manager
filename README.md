@@ -23,6 +23,7 @@ A full-stack order management app. Customers sign up, browse products, place ord
 - Search and filter orders, update their status
 - Customer list with order history and total spent
 - Admins can delete orders and create staff accounts
+- Product management: create, edit, archive and delete products, with stock tracking and low-stock badges
 
 ## Tech stack
 
@@ -107,22 +108,26 @@ The integration tests cover authentication, role-based access, server-side prici
 
 ## API overview
 
-| Method | Endpoint                           | Access                                 |
-| ------ | ---------------------------------- | -------------------------------------- |
-| POST   | /api/auth/register                 | public (creates a customer)            |
-| POST   | /api/auth/login                    | public                                 |
-| GET    | /api/auth/me                       | signed in                              |
-| POST   | /api/staff                         | admin                                  |
-| GET    | /api/products, /api/products/:id   | public                                 |
-| POST   | /api/orders                        | customer                               |
-| GET    | /api/orders/mine                   | customer                               |
-| POST   | /api/orders/:id/cancel             | customer (own pending orders)          |
-| GET    | /api/orders/:id                    | owner, staff, admin                    |
-| GET    | /api/orders                        | staff, admin (filters: status, search) |
-| PATCH  | /api/orders/:id/status             | staff, admin                           |
-| DELETE | /api/orders/:id                    | admin                                  |
-| GET    | /api/customers, /api/customers/:id | staff, admin                           |
-| GET    | /api/stats                         | staff, admin                           |
+| Method | Endpoint                           | Access                                  |
+| ------ | ---------------------------------- | --------------------------------------- |
+| POST   | /api/auth/register                 | public (creates a customer)             |
+| POST   | /api/auth/login                    | public                                  |
+| GET    | /api/auth/me                       | signed in                               |
+| POST   | /api/staff                         | admin                                   |
+| GET    | /api/products, /api/products/:id   | public                                  |
+| POST   | /api/orders                        | customer                                |
+| GET    | /api/orders/mine                   | customer                                |
+| POST   | /api/orders/:id/cancel             | customer (own pending orders)           |
+| GET    | /api/orders/:id                    | owner, staff, admin                     |
+| GET    | /api/orders                        | staff, admin (filters: status, search)  |
+| PATCH  | /api/orders/:id/status             | staff, admin                            |
+| DELETE | /api/orders/:id                    | admin                                   |
+| GET    | /api/customers, /api/customers/:id | staff, admin                            |
+| GET    | /api/stats                         | staff, admin                            |
+| GET    | /api/admin/products                | staff, admin                            |
+| POST   | /api/products                      | admin                                   |
+| PATCH  | /api/products/:id                  | admin                                   |
+| DELETE | /api/products/:id                  | admin (409 if the product is in orders) |
 
 ## Design decisions
 

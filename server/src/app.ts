@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { pool, query, queryOne, withTransaction, STATUSES } from './db.js';
 import type { Role, Status } from './db.js';
 import { authenticate, authorizeRoles, JWT_SECRET } from './auth.js';
-import { isValidEmail, parseOrderItems } from './validation.js';
+import { isValidEmail, parseOrderItems, parseProductInput } from './validation.js';
 
 const SHIPPING = 5;
 
@@ -37,6 +37,7 @@ interface ProductRow {
   name: string;
   price: number;
   stock: number;
+  active: boolean;
 }
 interface OrderRow {
   id: number;
@@ -160,11 +161,12 @@ async function placeOrder(userId: number, address: string, items: Map<number, nu
     for (const productId of [...items.keys()].sort((a, b) => a - b)) {
       const qty = items.get(productId)!;
       const found = await client.query<ProductRow>(
-        'SELECT id, name, price, stock FROM products WHERE id = $1 FOR UPDATE',
+        'SELECT id, name, price, stock, active FROM products WHERE id = $1 FOR UPDATE',
         [productId],
       );
       const p = found.rows[0];
       if (!p) throw new HttpError(400, `Product ${productId} not found`);
+      if (!p.active) throw new HttpError(409, `${p.name} is no longer available`);
       if (p.stock < qty) throw new HttpError(409, `Not enough stock for ${p.name}`);
       subtotal += p.price * qty; // السعر من قاعدة البيانات، مش من الزبون
       lines.push({ id: p.id, name: p.name, price: p.price, qty });
@@ -227,8 +229,9 @@ app.post('/api/staff', authenticate, authorizeRoles('admin'), async (req, res) =
 // ---------- Products (عام، بدون تسجيل دخول) ----------
 app.get('/api/products', async (req, res) => {
   const { category, search } = req.query;
-  const where: string[] = [];
+  const where: string[] = ['active = true']; // بس المنتجات المتاحة
   const params: unknown[] = [];
+  
 
   if (typeof category === 'string' && category) {
     where.push(`category = ${bind(params, category)}`);
@@ -245,11 +248,89 @@ app.get('/api/products', async (req, res) => {
 
 app.get('/api/products/:id', async (req, res) => {
   const product = await queryOne(
-    'SELECT id, name, description, category, price, stock, icon, color FROM products WHERE id = $1',
+    'SELECT id, name, description, category, price, stock, icon, color FROM products WHERE id = $1 AND active = true',
     [idOf(req.params.id)],
   );
   if (!product) throw new HttpError(404, 'Product not found');
   res.json(product);
+});
+
+// ---------- Products: الإدارة ----------
+const PRODUCT_COLUMNS = 'id, name, description, category, price, stock, icon, color, active';
+
+// staff و admin بيشوفوا كل المنتجات (بما فيها المؤرشفة)
+app.get('/api/admin/products', authenticate, authorizeRoles('admin', 'staff'), async (_req, res) => {
+  res.json(await query(`SELECT ${PRODUCT_COLUMNS} FROM products ORDER BY id`));
+});
+
+app.post('/api/products', authenticate, authorizeRoles('admin'), async (req, res) => {
+  const { data, errors } = parseProductInput(req.body, true);
+  if (errors.length) throw new HttpError(400, 'Validation failed', errors);
+
+  const product = await queryOne(
+    `INSERT INTO products (name, description, category, price, stock, icon, color, active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${PRODUCT_COLUMNS}`,
+    [
+      data.name,
+      data.description ?? '',
+      data.category,
+      data.price,
+      data.stock,
+      data.icon ?? 'package',
+      data.color ?? 'teal',
+      data.active ?? true,
+    ],
+  );
+  res.status(201).json(product);
+});
+
+app.patch('/api/products/:id', authenticate, authorizeRoles('admin'), async (req, res) => {
+  const id = idOf(req.params.id);
+  const { data, errors } = parseProductInput(req.body, false);
+  if (errors.length) throw new HttpError(400, 'Validation failed', errors);
+
+  // أسماء الأعمدة من قائمة ثابتة عندنا (مش من الطلب)، والقيم بتروح كـ parameters
+  const columns: Record<string, string> = {
+    name: 'name',
+    description: 'description',
+    category: 'category',
+    price: 'price',
+    stock: 'stock',
+    icon: 'icon',
+    color: 'color',
+    active: 'active',
+  };
+  const params: unknown[] = [];
+  const sets = Object.entries(data).map(([key, value]) => `${columns[key]} = ${bind(params, value)}`);
+  if (sets.length === 0) throw new HttpError(400, 'Validation failed', ['nothing to update']);
+
+  const product = await queryOne(
+    `UPDATE products SET ${sets.join(', ')} WHERE id = ${bind(params, id)} RETURNING ${PRODUCT_COLUMNS}`,
+    params,
+  );
+  if (!product) throw new HttpError(404, 'Product not found');
+  res.json(product);
+});
+
+const IN_USE = 'This product appears in existing orders. Archive it instead of deleting it.';
+
+app.delete('/api/products/:id', authenticate, authorizeRoles('admin'), async (req, res) => {
+  const id = idOf(req.params.id);
+  const used = await queryOne<{ used: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM order_items WHERE product_id = $1) AS used',
+    [id],
+  );
+  if (used?.used) throw new HttpError(409, IN_USE);
+
+  try {
+    const result = await pool.query('DELETE FROM products WHERE id = $1', [id]);
+    if (result.rowCount === 0) throw new HttpError(404, 'Product not found');
+  } catch (err) {
+    // 23503 = foreign_key_violation (طلب انعمل بنفس اللحظة)
+    if ((err as { code?: string }).code === '23503') throw new HttpError(409, IN_USE);
+    throw err;
+  }
+  res.status(204).end();
 });
 
 // ---------- Orders: الزبون ----------
