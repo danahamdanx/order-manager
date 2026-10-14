@@ -24,6 +24,7 @@ A full-stack order management app. Customers sign up, browse products, place ord
 - Customer list with order history and total spent
 - Admins can delete orders and create staff accounts
 - Product management: create, edit, archive and delete products, with stock tracking and low-stock badges
+- Product photos (uploaded from the admin panel),categories, and sorting in the shop
 
 ## Tech stack
 
@@ -108,26 +109,31 @@ The integration tests cover authentication, role-based access, server-side prici
 
 ## API overview
 
-| Method | Endpoint                           | Access                                  |
-| ------ | ---------------------------------- | --------------------------------------- |
-| POST   | /api/auth/register                 | public (creates a customer)             |
-| POST   | /api/auth/login                    | public                                  |
-| GET    | /api/auth/me                       | signed in                               |
-| POST   | /api/staff                         | admin                                   |
-| GET    | /api/products, /api/products/:id   | public                                  |
-| POST   | /api/orders                        | customer                                |
-| GET    | /api/orders/mine                   | customer                                |
-| POST   | /api/orders/:id/cancel             | customer (own pending orders)           |
-| GET    | /api/orders/:id                    | owner, staff, admin                     |
-| GET    | /api/orders                        | staff, admin (filters: status, search)  |
-| PATCH  | /api/orders/:id/status             | staff, admin                            |
-| DELETE | /api/orders/:id                    | admin                                   |
-| GET    | /api/customers, /api/customers/:id | staff, admin                            |
-| GET    | /api/stats                         | staff, admin                            |
-| GET    | /api/admin/products                | staff, admin                            |
-| POST   | /api/products                      | admin                                   |
-| PATCH  | /api/products/:id                  | admin                                   |
-| DELETE | /api/products/:id                  | admin (409 if the product is in orders) |
+| Method | Endpoint                              | Access                                            |
+| ------ | ------------------------------------- | ------------------------------------------------- |
+| POST   | /api/auth/register                    | public (creates a customer)                       |
+| POST   | /api/auth/login                       | public                                            |
+| GET    | /api/auth/me                          | signed in                                         |
+| POST   | /api/staff                            | admin                                             |
+| GET    | /api/products, /api/products/:id      | public                                            |
+| POST   | /api/orders                           | customer                                          |
+| GET    | /api/orders/mine                      | customer                                          |
+| POST   | /api/orders/:id/cancel                | customer (own pending orders)                     |
+| GET    | /api/orders/:id                       | owner, staff, admin                               |
+| GET    | /api/orders                           | staff, admin (filters: status, search)            |
+| PATCH  | /api/orders/:id/status                | staff, admin                                      |
+| DELETE | /api/orders/:id                       | admin                                             |
+| GET    | /api/customers, /api/customers/:id    | staff, admin                                      |
+| GET    | /api/stats                            | staff, admin                                      |
+| GET    | /api/admin/products                   | staff, admin                                      |
+| POST   | /api/products                         | admin                                             |
+| PATCH  | /api/products/:id                     | admin                                             |
+| DELETE | /api/products/:id                     | admin (409 if the product is in orders)           |
+| GET    | /api/categories                       | public                                            |
+| GET    | /api/products?category=&search=&sort= | public (sort: newest, price_asc, price_desc, name |
+| GET    | /api/products/:id/image               | public                                            |
+| PUT    | /api/products/:id/image               | admin (JPEG, PNG or WebP, max 1 MB)               |
+| DELETE | /api/products/:id/image               | admin                                             |
 
 ## Design decisions
 
@@ -137,6 +143,7 @@ The integration tests cover authentication, role-based access, server-side prici
 - **Three layers of access control:** route guards in the UI, hidden controls, and `authorizeRoles` middleware on the API. Only the last one is a real security boundary.
 - **Roles never come from the client.** Registration always creates a customer.
 - **Customers cannot discover other people's orders:** requesting someone else's order returns 404, not 403.
+- **Images live in PostgreSQL.** The browser resizes photos to 900px before upload, the API checks the real file type from its first bytes (SVG is rejected), and responses are cached by version number. For a larger catalog, move them to object storage.
 
 ## Project structure
 

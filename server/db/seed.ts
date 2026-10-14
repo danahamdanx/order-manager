@@ -16,11 +16,19 @@ export async function seed(pool: Pool) {
     await client.query('BEGIN');
 
     const p = await client.query<{ c: number }>('SELECT COUNT(*)::int AS c FROM products');
-    if (p.rows[0].c === 0) {
-      for (const row of products) {
+        if (p.rows[0].c === 0) {
+      const categoryIds = new Map<string, number>();
+      for (const name of new Set(products.map((row) => row[2]))) {
+        const res = await client.query<{ id: number }>(
+          'INSERT INTO categories (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id',
+          [name],
+        );
+        categoryIds.set(name, res.rows[0].id);
+      }
+      for (const [name, description, category, price, stock, icon, color] of products) {
         await client.query(
-          'INSERT INTO products (name, description, category, price, stock, icon, color) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-          row,
+          'INSERT INTO products (name, description, category_id, price, stock, icon, color) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [name, description, categoryIds.get(category), price, stock, icon, color],
         );
       }
       console.log('Seeded products');

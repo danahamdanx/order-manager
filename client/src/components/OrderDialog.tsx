@@ -3,6 +3,8 @@ import { api } from '../api';
 import { formatDate, money } from '../lib/format';
 import { STATUSES } from '../types';
 import type { Order, Status } from '../types';
+import { ProductImage } from '../components/ProductImage';
+
 
 interface Props {
   order: Order;
@@ -58,11 +60,17 @@ export function OrderDialog({ order, canDelete, onClose, onUpdated, onDeleted }:
 
       <div className="order-detail">
         {order.items.map((i) => (
-          <div className="sum-row" key={i.productId}>
-            <span>{i.productName} × {i.quantity}</span>
-            <span>{money(i.unitPrice * i.quantity)}</span>
-          </div>
-        ))}
+              <div className="sum-row" key={i.productId}>
+                <span className="item-line">
+                  <ProductImage
+                    product={{ id: i.productId, name: i.productName, icon: i.icon, color: i.color, imageVersion: i.imageVersion }}
+                    size="xs"
+                  />
+                  {i.productName} × {i.quantity}
+                </span>
+                <span>{money(i.unitPrice * i.quantity)}</span>
+              </div>
+            ))}
         <div className="sum-row"><span className="muted">Shipping</span><span>{money(order.shipping)}</span></div>
         <div className="sum-row sum-total"><span>Total</span><span>{money(order.total)}</span></div>
       </div>

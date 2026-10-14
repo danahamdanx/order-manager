@@ -11,7 +11,7 @@ const PALETTE: Record<string, { bg: string; fg: string }> = {
 
 interface Props {
   product: Pick<Product, 'icon' | 'color'>;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
 }
 
 export function ProductTile({ product, size = 'md' }: Props) {

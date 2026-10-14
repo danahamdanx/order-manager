@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api';
 import { useAuth } from '../../auth/useAuth';
 import { ProductDialog } from '../../components/ProductDialog';
-import { ProductTile } from '../../components/ProductTile';
 import { money } from '../../lib/format';
 import type { AdminProduct } from '../../types';
+import { ProductImage } from '../../components/ProductImage';
 
 export default function ProductsPage() {
   const { user } = useAuth();
@@ -73,10 +73,14 @@ export default function ProductsPage() {
     }
   }
 
-  function handleSaved(saved: AdminProduct, isNew: boolean) {
+    function handleSaved(saved: AdminProduct, isNew: boolean, imageError?: string) {
     setProducts((prev) => (isNew ? [...prev, saved] : prev.map((x) => (x.id === saved.id ? saved : x))));
     setDialog(null);
-    flash(isNew ? `${saved.name} added` : `${saved.name} updated`);
+    if (imageError) {
+      setActionError(`${saved.name} was saved, but the image could not be uploaded: ${imageError}`);
+    } else {
+      flash(isNew ? `${saved.name} added` : `${saved.name} updated`);
+    }
   }
 
   return (
@@ -130,7 +134,7 @@ export default function ProductsPage() {
                 <tr key={p.id} className={p.active ? '' : 'row-muted'}>
                   <td>
                     <div className="cell-product">
-                      <ProductTile product={p} size="sm" />
+                      <ProductImage product={p} size="sm" />
                       <strong>{p.name}</strong>
                     </div>
                   </td>
