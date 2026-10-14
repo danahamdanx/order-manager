@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useCart } from '../cart/useCart';
-import { ProductTile } from '../components/ProductTile';
+import { ProductImage } from '../components/ProductImage';
 import { money } from '../lib/format';
-import type { Product } from '../types';
+import { useDebounce } from '../lib/useDebounce';
 import { useSlowLoading } from '../lib/useSlowLoading';
+import { SORT_OPTIONS } from '../types';
+import type { Category, Product } from '../types';
 
 function ProductCard({ product }: { product: Product }) {
   const { add } = useCart();
@@ -22,7 +24,7 @@ function ProductCard({ product }: { product: Product }) {
   return (
     <article className="card product">
       <Link to={`/shop/${product.id}`} className="product-link">
-        <ProductTile product={product} />
+        <ProductImage product={product} />
         <h3>{product.name}</h3>
       </Link>
       <p className="muted">{product.category}</p>
@@ -49,16 +51,36 @@ function ProductCard({ product }: { product: Product }) {
 
 export default function ShopPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState('');
+  const [sort, setSort] = useState('newest');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const slow = useSlowLoading(loading);
+
+  // التصنيفات بتيجي من السيرفر (الفلاتر ما بتتأثر بالمنتجات المعروضة)
+  useEffect(() => {
+    api
+      .get<Category[]>('/categories')
+      .then(setCategories)
+      .catch(() => {
+        // الفلاتر اختيارية، فإذا فشلت الصفحة بتضل شغالة بدونها
+      });
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+
+    const query = new URLSearchParams({ sort });
+    if (category) query.set('category', category);
+    if (debouncedSearch.trim()) query.set('search', debouncedSearch.trim());
+
     api
-      .get<Product[]>('/products', controller.signal)
+      .get<Product[]>(`/products?${query}`, controller.signal)
       .then(setProducts)
       .catch((err: Error) => {
         if (err.name === 'AbortError') return;
@@ -68,19 +90,7 @@ export default function ShopPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, []);
-
-  const categories = useMemo(() => ['', ...new Set(products.map((p) => p.category))], [products]);
-
-  // الكتالوج صغير، فبنفلتر بالمتصفح. السيرفر كمان بيدعم الفلترة لو كبر
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return products.filter(
-      (p) =>
-        (!category || p.category === category) &&
-        (!q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)),
-    );
-  }, [products, category, search]);
+  }, [category, sort, debouncedSearch]);
 
   return (
     <>
@@ -93,23 +103,30 @@ export default function ShopPage() {
       </section>
 
       <div className="controls">
-        <input
-          className="search"
-          type="search"
-          placeholder="Search products"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search products"
-        />
+        <div className="controls-row">
+          <input
+            className="search"
+            type="search"
+            placeholder="Search products"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search products"
+          />
+          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort products">
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
         <div className="filters" role="group" aria-label="Filter by category">
-          {categories.map((c) => (
+          {[{ name: '', count: 0 }, ...categories].map((c) => (
             <button
-              key={c || 'all'}
-              className={`chip ${category === c ? 'active' : ''}`}
-              aria-pressed={category === c}
-              onClick={() => setCategory(c)}
+              key={c.name || 'all'}
+              className={`chip ${category === c.name ? 'active' : ''}`}
+              aria-pressed={category === c.name}
+              onClick={() => setCategory(c.name)}
             >
-              {c || 'All'}
+              {c.name || 'All'}
             </button>
           ))}
         </div>
@@ -120,12 +137,11 @@ export default function ShopPage() {
           {slow ? 'Waking up the server. The first visit can take up to a minute…' : 'Loading products…'}
         </p>
       )}
-      {loading && <p className="muted">Loading products…</p>}
       {error && <p className="alert-error" role="alert">{error}</p>}
-      {!loading && !error && visible.length === 0 && <p className="muted">No products found.</p>}
+      {!loading && !error && products.length === 0 && <p className="muted">No products found.</p>}
 
       <div className="grid">
-        {visible.map((p) => (
+        {products.map((p) => (
           <ProductCard key={p.id} product={p} />
         ))}
       </div>

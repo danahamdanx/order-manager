@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { pool, query, queryOne, withTransaction, STATUSES } from './db.js';
 import type { Role, Status } from './db.js';
 import { authenticate, authorizeRoles, JWT_SECRET } from './auth.js';
-import { isValidEmail, parseOrderItems, parseProductInput } from './validation.js';
+import { isValidEmail, parseOrderItems, parseProductInput , sniffImageType } from './validation.js';
 
 const SHIPPING = 5;
 
@@ -55,6 +55,9 @@ interface OrderItemRow {
   productName: string;
   unitPrice: number;
   quantity: number;
+  icon: string;
+  color: string;
+  imageVersion: number | null;
 }
 
 // ---------- Helpers ----------
@@ -106,10 +109,13 @@ const ORDER_SELECT = `
 async function attachItems<T extends { id: number }>(orders: T[]) {
   if (orders.length === 0) return [] as (T & { items: OrderItemRow[] })[];
 
-  const rows = await query<OrderItemRow & { orderId: number }>(
-    `SELECT order_id AS "orderId", product_id AS "productId", product_name AS "productName",
-            unit_price AS "unitPrice", quantity
-     FROM order_items WHERE order_id = ANY($1::int[]) ORDER BY id`,
+    const rows = await query<OrderItemRow & { orderId: number }>(
+    `SELECT oi.order_id AS "orderId", oi.product_id AS "productId", oi.product_name AS "productName",
+            oi.unit_price AS "unitPrice", oi.quantity, p.icon, p.color,
+            (SELECT EXTRACT(EPOCH FROM i.updated_at)::bigint FROM product_images i
+              WHERE i.product_id = oi.product_id) AS "imageVersion"
+     FROM order_items oi JOIN products p ON p.id = oi.product_id
+     WHERE oi.order_id = ANY($1::int[]) ORDER BY oi.id`,
     [orders.map((o) => o.id)],
   );
 
@@ -226,54 +232,104 @@ app.post('/api/staff', authenticate, authorizeRoles('admin'), async (req, res) =
   res.status(201).json(publicUser(user));
 });
 
-// ---------- Products (عام، بدون تسجيل دخول) ----------
-app.get('/api/products', async (req, res) => {
-  const { category, search } = req.query;
-  const where: string[] = ['active = true']; // بس المنتجات المتاحة
-  const params: unknown[] = [];
-  
+// ---------- Products ----------
+const PRODUCT_SELECT = `
+  SELECT p.id, p.name, p.description, c.name AS category, p.price, p.stock, p.icon, p.color, p.active,
+         p.created_at AS "createdAt",
+         (SELECT EXTRACT(EPOCH FROM i.updated_at)::bigint FROM product_images i
+           WHERE i.product_id = p.id) AS "imageVersion"
+  FROM products p JOIN categories c ON c.id = p.category_id`;
 
-  if (typeof category === 'string' && category) {
-    where.push(`category = ${bind(params, category)}`);
-  }
+// خيارات الترتيب من قائمة ثابتة، فما بيدخل أي نص من الطلب للـ SQL
+const SORTS: Record<string, string> = {
+  newest: 'p.created_at DESC, p.id DESC',
+  price_asc: 'p.price ASC, p.id',
+  price_desc: 'p.price DESC, p.id',
+  name: 'lower(p.name) ASC, p.id',
+};
+
+async function loadProduct(id: number) {
+  const product = await queryOne(`${PRODUCT_SELECT} WHERE p.id = $1`, [id]);
+  if (!product) throw new HttpError(404, 'Product not found');
+  return product;
+}
+
+// بنلاقي التصنيف بغض النظر عن حالة الأحرف، وإلا بنعمله
+async function categoryIdFor(name: string): Promise<number> {
+  const existing = await queryOne<{ id: number }>('SELECT id FROM categories WHERE lower(name) = lower($1)', [name]);
+  if (existing) return existing.id;
+  const created = await queryOne<{ id: number }>(
+    'INSERT INTO categories (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id',
+    [name],
+  );
+  return created!.id;
+}
+
+app.get('/api/categories', async (_req, res) => {
+  res.json(
+    await query(
+      `SELECT c.name, COUNT(p.id)::int AS count
+       FROM categories c JOIN products p ON p.category_id = c.id AND p.active
+       GROUP BY c.id ORDER BY c.name`,
+    ),
+  );
+});
+
+// عام، بدون تسجيل دخول
+app.get('/api/products', async (req, res) => {
+  const { category, search, sort } = req.query;
+  const where: string[] = ['p.active = true'];
+  const params: unknown[] = [];
+
+  if (typeof category === 'string' && category) where.push(`c.name = ${bind(params, category)}`);
   if (typeof search === 'string' && search.trim()) {
     const like = bind(params, `%${search.trim()}%`);
-    where.push(`(name ILIKE ${like} OR description ILIKE ${like})`);
+    where.push(`(p.name ILIKE ${like} OR p.description ILIKE ${like})`);
   }
+  const sortKey = typeof sort === 'string' && Object.hasOwn(SORTS, sort) ? sort : 'newest';
 
-  const sql = `SELECT id, name, description, category, price, stock, icon, color
-               FROM products ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id`;
-  res.json(await query(sql, params));
+  res.json(await query(`${PRODUCT_SELECT} WHERE ${where.join(' AND ')} ORDER BY ${SORTS[sortKey]}`, params));
 });
 
 app.get('/api/products/:id', async (req, res) => {
-  const product = await queryOne(
-    'SELECT id, name, description, category, price, stock, icon, color FROM products WHERE id = $1 AND active = true',
-    [idOf(req.params.id)],
-  );
+  const product = await queryOne(`${PRODUCT_SELECT} WHERE p.id = $1 AND p.active = true`, [idOf(req.params.id)]);
   if (!product) throw new HttpError(404, 'Product not found');
   res.json(product);
 });
 
-// ---------- Products: الإدارة ----------
-const PRODUCT_COLUMNS = 'id, name, description, category, price, stock, icon, color, active';
+// الصورة نفسها. مع ?v= بتنخزن بالمتصفح لسنة، لأنه كل صورة جديدة إلها رقم نسخة جديد
+app.get('/api/products/:id/image', async (req, res) => {
+  const image = await queryOne<{ content_type: string; data: Buffer }>(
+    'SELECT content_type, data FROM product_images WHERE product_id = $1',
+    [idOf(req.params.id)],
+  );
+  if (!image) throw new HttpError(404, 'Image not found');
+
+  const versioned = typeof req.query.v === 'string';
+  res.set({
+    'Content-Type': image.content_type,
+    'Cache-Control': versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=300',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.send(image.data);
+});
 
 // staff و admin بيشوفوا كل المنتجات (بما فيها المؤرشفة)
 app.get('/api/admin/products', authenticate, authorizeRoles('admin', 'staff'), async (_req, res) => {
-  res.json(await query(`SELECT ${PRODUCT_COLUMNS} FROM products ORDER BY id`));
+  res.json(await query(`${PRODUCT_SELECT} ORDER BY p.id`));
 });
 
 app.post('/api/products', authenticate, authorizeRoles('admin'), async (req, res) => {
   const { data, errors } = parseProductInput(req.body, true);
   if (errors.length) throw new HttpError(400, 'Validation failed', errors);
 
-  const product = await queryOne(
-    `INSERT INTO products (name, description, category, price, stock, icon, color, active)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${PRODUCT_COLUMNS}`,
+  const created = await queryOne<{ id: number }>(
+    `INSERT INTO products (name, description, category_id, price, stock, icon, color, active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [
       data.name,
       data.description ?? '',
-      data.category,
+      await categoryIdFor(data.category!),
       data.price,
       data.stock,
       data.icon ?? 'package',
@@ -281,11 +337,12 @@ app.post('/api/products', authenticate, authorizeRoles('admin'), async (req, res
       data.active ?? true,
     ],
   );
-  res.status(201).json(product);
+  res.status(201).json(await loadProduct(created!.id));
 });
 
 app.patch('/api/products/:id', authenticate, authorizeRoles('admin'), async (req, res) => {
   const id = idOf(req.params.id);
+  await loadProduct(id); // 404 إذا مش موجود
   const { data, errors } = parseProductInput(req.body, false);
   if (errors.length) throw new HttpError(400, 'Validation failed', errors);
 
@@ -293,23 +350,55 @@ app.patch('/api/products/:id', authenticate, authorizeRoles('admin'), async (req
   const columns: Record<string, string> = {
     name: 'name',
     description: 'description',
-    category: 'category',
     price: 'price',
     stock: 'stock',
     icon: 'icon',
     color: 'color',
     active: 'active',
   };
+  const { category, ...rest } = data;
   const params: unknown[] = [];
-  const sets = Object.entries(data).map(([key, value]) => `${columns[key]} = ${bind(params, value)}`);
+  const sets = Object.entries(rest).map(([key, value]) => `${columns[key]} = ${bind(params, value)}`);
+  if (category !== undefined) sets.push(`category_id = ${bind(params, await categoryIdFor(category))}`);
   if (sets.length === 0) throw new HttpError(400, 'Validation failed', ['nothing to update']);
 
-  const product = await queryOne(
-    `UPDATE products SET ${sets.join(', ')} WHERE id = ${bind(params, id)} RETURNING ${PRODUCT_COLUMNS}`,
-    params,
-  );
-  if (!product) throw new HttpError(404, 'Product not found');
-  res.json(product);
+  await pool.query(`UPDATE products SET ${sets.join(', ')} WHERE id = ${bind(params, id)}`, params);
+  res.json(await loadProduct(id));
+});
+
+// رفع صورة: الجسم هو الملف نفسه (مش JSON). الـ authenticate بيشتغل قبل قراءة الملف
+app.put(
+  '/api/products/:id/image',
+  authenticate,
+  authorizeRoles('admin'),
+  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '1mb' }),
+  async (req, res) => {
+    const id = idOf(req.params.id);
+    await loadProduct(id);
+
+    const body: unknown = req.body;
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      throw new HttpError(415, 'Send a JPEG, PNG or WebP image');
+    }
+    const type = sniffImageType(body);
+    if (!type) throw new HttpError(415, 'The file is not a valid JPEG, PNG or WebP image');
+
+    await pool.query(
+      `INSERT INTO product_images (product_id, content_type, data, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (product_id) DO UPDATE
+         SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = now()`,
+      [id, type, body],
+    );
+    res.json(await loadProduct(id));
+  },
+);
+
+app.delete('/api/products/:id/image', authenticate, authorizeRoles('admin'), async (req, res) => {
+  const id = idOf(req.params.id);
+  await loadProduct(id);
+  await pool.query('DELETE FROM product_images WHERE product_id = $1', [id]);
+  res.json(await loadProduct(id));
 });
 
 const IN_USE = 'This product appears in existing orders. Archive it instead of deleting it.';
@@ -470,6 +559,11 @@ app.get('/api/stats', authenticate, authorizeRoles('admin', 'staff'), async (_re
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof HttpError) {
     return res.status(err.status).json({ error: err.message, ...(err.details.length && { details: err.details }) });
+  }
+    // أخطاء الـ parsers (ملف كبير، JSON غلط) بتيجي مع status من نوع 4xx
+  const status = (err as { status?: number }).status;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    return res.status(status).json({ error: status === 413 ? 'The uploaded file is too large' : 'Bad request' });
   }
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });

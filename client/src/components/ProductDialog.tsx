@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import { api, ApiError } from '../api';
+import { resizeImage } from '../lib/resizeImage';
 import { PRODUCT_COLORS, PRODUCT_ICONS } from '../types';
 import type { AdminProduct } from '../types';
+import { ProductImage } from './ProductImage';
 import { ProductTile } from './ProductTile';
 
 interface Props {
   product: AdminProduct | null; // null يعني منتج جديد
   categories: string[];
   onClose: () => void;
-  onSaved: (product: AdminProduct, isNew: boolean) => void;
+  onSaved: (product: AdminProduct, isNew: boolean, imageError?: string) => void;
 }
 
 interface Errors {
@@ -28,6 +30,10 @@ export function ProductDialog({ product, categories, onClose, onSaved }: Props) 
   const [stock, setStock] = useState(product ? String(product.stock) : '');
   const [icon, setIcon] = useState(product?.icon ?? 'package');
   const [color, setColor] = useState(product?.color ?? 'teal');
+  const [file, setFile] = useState<Blob | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -35,6 +41,38 @@ export function ProductDialog({ product, categories, onClose, onSaved }: Props) 
   useEffect(() => {
     ref.current?.showModal();
   }, []);
+
+  // بنحرر ذاكرة المعاينة لما تتغير أو لما تنغلق النافذة
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  async function handleFile(ev: ChangeEvent<HTMLInputElement>) {
+    const chosen = ev.target.files?.[0];
+    ev.target.value = '';
+    if (!chosen) return;
+    setImageError(null);
+    if (!chosen.type.startsWith('image/')) {
+      setImageError('Choose an image file');
+      return;
+    }
+    try {
+      const blob = await resizeImage(chosen);
+      setFile(blob);
+      setRemoveImage(false);
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : 'Could not read the image');
+    }
+  }
+
+  function clearImage() {
+    setFile(null);
+    setPreviewUrl(null);
+    setRemoveImage(true);
+  }
 
   // نفس شروط السيرفر، عشان المستخدم يشوف الخطأ فورًا
   function validate(): Errors {
@@ -69,25 +107,66 @@ export function ProductDialog({ product, categories, onClose, onSaved }: Props) 
       icon,
       color,
     };
+
+    let saved: AdminProduct;
     try {
-      const saved = product
+      saved = product
         ? await api.patch<AdminProduct>(`/products/${product.id}`, body)
         : await api.post<AdminProduct>('/products', body);
-      onSaved(saved, product === null);
     } catch (err) {
       setServerError(err instanceof ApiError ? [err.message, ...err.details].join(': ') : 'Something went wrong');
       setSaving(false);
+      return;
     }
+
+    // المنتج انحفظ. فشل الصورة ما بيلغي الحفظ، بنبلغ المستخدم بس
+    let final = saved;
+    let failure: string | undefined;
+    try {
+      if (file) {
+        final = await api.putImage<AdminProduct>(`/products/${saved.id}/image`, file);
+      } else if (removeImage && product?.imageVersion) {
+        final = await api.delete<AdminProduct>(`/products/${saved.id}/image`);
+      }
+    } catch (err) {
+      failure = err instanceof Error ? err.message : 'Image upload failed';
+    }
+    onSaved(final, product === null, failure);
   }
+
+  const hasExistingImage = Boolean(product?.imageVersion) && !removeImage;
 
   return (
     <dialog ref={ref} onClose={onClose} className="modal modal-wide">
       <form onSubmit={handleSubmit} noValidate>
         <h2 className="page-title">{product ? `Edit ${product.name}` : 'New product'}</h2>
 
-        <div className="dialog-preview">
-          <ProductTile product={{ icon, color }} size="sm" />
-          <span className="muted">Preview</span>
+        <div className="image-field">
+          <div className="image-preview">
+            {previewUrl ? (
+              <img className="pimg pimg-md" src={previewUrl} alt="Preview of the new product image" />
+            ) : hasExistingImage && product ? (
+              <ProductImage
+                product={{ id: product.id, name: product.name, icon, color, imageVersion: product.imageVersion }}
+                size="md"
+              />
+            ) : (
+              <ProductTile product={{ icon, color }} size="md" />
+            )}
+          </div>
+          <div>
+            <label className="btn btn-secondary file-btn">
+              Choose image
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFile} className="sr-only" />
+            </label>{' '}
+            {(previewUrl || hasExistingImage) && (
+              <button type="button" className="link-btn" onClick={clearImage}>
+                Remove image
+              </button>
+            )}
+            <p className="muted small">JPG, PNG or WebP. It is resized automatically. Without an image, the icon is shown.</p>
+            {imageError && <span className="field-error">{imageError}</span>}
+          </div>
         </div>
 
         <div className="form-grid">
@@ -125,7 +204,7 @@ export function ProductDialog({ product, categories, onClose, onSaved }: Props) 
             {errors.stock && <span className="field-error">{errors.stock}</span>}
           </div>
           <div className="field">
-            <label htmlFor="p-icon">Icon</label>
+            <label htmlFor="p-icon">Fallback icon</label>
             <select id="p-icon" value={icon} onChange={(e) => setIcon(e.target.value)}>
               {PRODUCT_ICONS.map((i) => (
                 <option key={i} value={i}>{i}</option>
@@ -133,7 +212,7 @@ export function ProductDialog({ product, categories, onClose, onSaved }: Props) 
             </select>
           </div>
           <div className="field">
-            <label htmlFor="p-color">Color</label>
+            <label htmlFor="p-color">Fallback color</label>
             <select id="p-color" value={color} onChange={(e) => setColor(e.target.value)}>
               {PRODUCT_COLORS.map((c) => (
                 <option key={c} value={c}>{c}</option>

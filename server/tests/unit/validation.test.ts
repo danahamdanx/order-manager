@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEmail, parseOrderItems, parseProductInput } from '../../src/validation';
+import { isValidEmail, parseOrderItems, parseProductInput, sniffImageType } from '../../src/validation';
 
 describe('isValidEmail', () => {
   it('accepts normal addresses', () => {
@@ -72,5 +72,21 @@ describe('parseProductInput', () => {
     for (const body of bad) {
       expect(parseProductInput(body, false).errors.length, JSON.stringify(body)).toBe(1);
     }
+  });
+});
+
+describe('sniffImageType', () => {
+  const pad = (bytes: number[]) => Buffer.concat([Buffer.from(bytes), Buffer.alloc(32)]);
+
+  it('recognizes JPEG, PNG and WebP by their first bytes', () => {
+    expect(sniffImageType(pad([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    expect(sniffImageType(pad([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe('image/png');
+    const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(8)]);
+    expect(sniffImageType(webp)).toBe('image/webp');
+  });
+
+  it('rejects SVG, text and tiny buffers', () => {
+    expect(sniffImageType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBeNull();
+    expect(sniffImageType(Buffer.from('hello'))).toBeNull();
   });
 });

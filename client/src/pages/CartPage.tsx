@@ -4,9 +4,9 @@ import { api, ApiError } from '../api';
 import { useAuth } from '../auth/useAuth';
 import { SHIPPING } from '../cart/context';
 import { useCart } from '../cart/useCart';
-import { ProductTile } from '../components/ProductTile';
 import { money } from '../lib/format';
 import type { Order } from '../types';
+import { ProductImage } from '../components/ProductImage';
 
 export default function CartPage() {
   const { lines, subtotal, setQuantity, remove, clear } = useCart();
@@ -54,7 +54,7 @@ export default function CartPage() {
         <h1 className="page-title">Your cart</h1>
         {lines.map(({ product, quantity }) => (
           <div className="line" key={product.id}>
-            <ProductTile product={product} size="sm" />
+            <ProductImage product={product} size="sm" />
             <div className="line-info">
               <strong>{product.name}</strong>
               <p className="muted" style={{ margin: 0 }}>{money(product.price)} each</p>

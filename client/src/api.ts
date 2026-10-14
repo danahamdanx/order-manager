@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
+export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
 const TOKEN_KEY = 'orderdesk_token';
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -18,6 +18,7 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: string;
   body?: unknown;
+  blob?: Blob;
   signal?: AbortSignal;
 }
 
@@ -25,16 +26,19 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+
+  let body: BodyInit | undefined;
+  if (options.blob) {
+    headers['Content-Type'] = options.blob.type;
+    body = options.blob;
+  } else if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(options.body);
+  }
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
-      method: options.method ?? 'GET',
-      headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-      signal: options.signal,
-    });
+    res = await fetch(`${API_URL}${path}`, { method: options.method ?? 'GET', headers, body, signal: options.signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new ApiError('Cannot reach the server.', 0);
@@ -53,4 +57,5 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  putImage: <T>(path: string, blob: Blob) => request<T>(path, { method: 'PUT', blob }),
 };

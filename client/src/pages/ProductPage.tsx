@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useCart } from '../cart/useCart';
-import { ProductTile } from '../components/ProductTile';
 import { money } from '../lib/format';
 import type { Product } from '../types';
+import { ProductImage } from '../components/ProductImage';
 
 export default function ProductPage() {
   const { id } = useParams();
@@ -46,7 +46,7 @@ export default function ProductPage() {
         </Link>
       </p>
       <div className="card detail">
-        <ProductTile product={product} size="lg" />
+        <ProductImage product={product} size="lg" />
         <div>
           {product.stock > 0 ? (
             <span className="badge badge-delivered">In stock</span>
