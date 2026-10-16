@@ -57,7 +57,7 @@ describe('role-based access', () => {
   it('lets an admin list customers', async () => {
     const res = await request(app).get('/api/customers').set(auth(admin));
     expect(res.status).toBe(200);
-    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.items.length).toBeGreaterThan(0);   
   });
 
   it('only lets an admin create staff accounts', async () => {
@@ -138,6 +138,6 @@ describe('orders', () => {
   it('searches orders without caring about letter case', async () => {
     const res = await request(app).get('/api/orders?search=LINA').set(auth(admin));
     expect(res.status).toBe(200);
-    expect(res.body.length).toBeGreaterThan(0);
+        expect(res.body.items.length).toBeGreaterThan(0);  
   });
 });

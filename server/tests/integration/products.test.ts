@@ -56,9 +56,9 @@ describe('product management', () => {
 
   it('lets staff view every product but not change them', async () => {
     const created = await createProduct({ name: 'Staff View' });
-    const list = await request(app).get('/api/admin/products').set(auth(staff));
+    const list = await request(app).get('/api/admin/products?search=Staff%20View').set(auth(staff));
     expect(list.status).toBe(200);
-    expect(list.body.some((p: { id: number }) => p.id === created.body.id)).toBe(true);
+    expect(list.body.items.some((p: { id: number }) => p.id === created.body.id)).toBe(true);
 
     const patch = await request(app).patch(`/api/products/${created.body.id}`).set(auth(staff)).send({ stock: 1 });
     expect(patch.status).toBe(403);
@@ -100,8 +100,8 @@ describe('product management', () => {
     expect(archived.body.active).toBe(false);
 
     // مخفي من المتجر ومن صفحة المنتج، ومش ممكن يتطلب
-    const publicList = await request(app).get('/api/products');
-    expect(publicList.body.some((p: { id: number }) => p.id === id)).toBe(false);
+    const publicList = await request(app).get('/api/products?search=Archive%20Me');
+    expect(publicList.body.items.some((p: { id: number }) => p.id === id)).toBe(false);
     expect((await request(app).get(`/api/products/${id}`)).status).toBe(404);
     expect((await place()).status).toBe(409);
   });

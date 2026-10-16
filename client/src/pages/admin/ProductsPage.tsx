@@ -1,49 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { useAuth } from '../../auth/useAuth';
+import { Pagination } from '../../components/Pagination';
 import { ProductDialog } from '../../components/ProductDialog';
-import { money } from '../../lib/format';
-import type { AdminProduct } from '../../types';
 import { ProductImage } from '../../components/ProductImage';
+import { money } from '../../lib/format';
+import { useDebounce } from '../../lib/useDebounce';
+import { usePagedFetch } from '../../lib/usePagedFetch';
+import { useUrlParams } from '../../lib/useUrlParams';
+import type { AdminProduct, Category } from '../../types';
+
+const DEFAULTS = { q: '', archived: '', page: '1' };
+const PAGE_SIZE = 10;
 
 export default function ProductsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const { values, update } = useUrlParams(DEFAULTS);
+  const search = useDebounce(values.q, 300);
 
-  const [products, setProducts] = useState<AdminProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, loading, error, reload } = usePagedFetch<AdminProduct>('/admin/products', {
+    search: search.trim(),
+    includeArchived: values.archived ? 'true' : '',
+    page: values.page,
+    limit: String(PAGE_SIZE),
+  });
+
+  const [categories, setCategories] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
   const [dialog, setDialog] = useState<{ product: AdminProduct | null } | null>(null);
 
+  // اقتراحات التصنيفات بنافذة الإضافة
   useEffect(() => {
-    const controller = new AbortController();
     api
-      .get<AdminProduct[]>('/admin/products', controller.signal)
-      .then(setProducts)
-      .catch((err: Error) => {
-        if (err.name === 'AbortError') return;
-        setError(err.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+      .get<Category[]>('/categories')
+      .then((list) => setCategories(list.map((c) => c.name)))
+      .catch(() => {
+        // الاقتراحات اختيارية
       });
-    return () => controller.abort();
   }, []);
-
-  const categories = useMemo(() => [...new Set(products.map((p) => p.category))].sort(), [products]);
-
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return products.filter(
-      (p) =>
-        (showArchived || p.active) &&
-        (!q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q)),
-    );
-  }, [products, search, showArchived]);
 
   function flash(message: string) {
     setNotice(message);
@@ -54,7 +50,7 @@ export default function ProductsPage() {
     setActionError(null);
     try {
       const updated = await api.patch<AdminProduct>(`/products/${p.id}`, { active: !p.active });
-      setProducts((prev) => prev.map((x) => (x.id === p.id ? updated : x)));
+      reload();
       flash(updated.active ? `${p.name} restored` : `${p.name} archived`);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Could not update the product');
@@ -66,16 +62,16 @@ export default function ProductsPage() {
     setActionError(null);
     try {
       await api.delete(`/products/${p.id}`);
-      setProducts((prev) => prev.filter((x) => x.id !== p.id));
+      reload();
       flash(`${p.name} deleted`);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Could not delete the product');
     }
   }
 
-    function handleSaved(saved: AdminProduct, isNew: boolean, imageError?: string) {
-    setProducts((prev) => (isNew ? [...prev, saved] : prev.map((x) => (x.id === saved.id ? saved : x))));
+  function handleSaved(saved: AdminProduct, isNew: boolean, imageError?: string) {
     setDialog(null);
+    reload();
     if (imageError) {
       setActionError(`${saved.name} was saved, but the image could not be uploaded: ${imageError}`);
     } else {
@@ -99,12 +95,16 @@ export default function ProductsPage() {
           className="search"
           type="search"
           placeholder="Search by name or category"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={values.q}
+          onChange={(e) => update({ q: e.target.value }, { replace: true })}
           aria-label="Search products"
         />
         <label className="check">
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={values.archived === '1'}
+            onChange={(e) => update({ archived: e.target.checked ? '1' : '' })}
+          />
           Show archived products
         </label>
       </div>
@@ -112,12 +112,12 @@ export default function ProductsPage() {
       {!isAdmin && <p className="muted">You have view-only access. Ask an admin to change products.</p>}
       {notice && <p className="success" role="status">{notice}</p>}
       {actionError && <p className="alert-error" role="alert">{actionError}</p>}
-      {loading && <p className="muted">Loading products…</p>}
+      {!data && loading && <p className="muted">Loading products…</p>}
       {error && <p className="alert-error" role="alert">{error}</p>}
-      {!loading && !error && visible.length === 0 && <p className="muted">No products found.</p>}
+      {data && data.items.length === 0 && <p className="muted">No products found.</p>}
 
-      {!loading && !error && visible.length > 0 && (
-        <div className="card table-wrap">
+      {data && data.items.length > 0 && (
+        <div className={`card table-wrap ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
           <table>
             <thead>
               <tr>
@@ -130,7 +130,7 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((p) => (
+              {data.items.map((p) => (
                 <tr key={p.id} className={p.active ? '' : 'row-muted'}>
                   <td>
                     <div className="cell-product">
@@ -171,6 +171,16 @@ export default function ProductsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {data && (
+        <Pagination
+          page={data.page}
+          pages={data.pages}
+          total={data.total}
+          pageSize={PAGE_SIZE}
+          onChange={(page) => update({ page: String(page) })}
+        />
       )}
 
       {dialog && (

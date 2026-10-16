@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEmail, parseOrderItems, parseProductInput, sniffImageType } from '../../src/validation';
+import { isValidEmail, parseOrderItems, parsePaging, parseProductInput, sniffImageType } from '../../src/validation';
 
 describe('isValidEmail', () => {
   it('accepts normal addresses', () => {
@@ -88,5 +88,26 @@ describe('sniffImageType', () => {
   it('rejects SVG, text and tiny buffers', () => {
     expect(sniffImageType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBeNull();
     expect(sniffImageType(Buffer.from('hello'))).toBeNull();
+  });
+});
+
+describe('parsePaging', () => {
+  it('uses defaults when nothing is sent', () => {
+    expect(parsePaging({})).toEqual({ limit: 10, page: 1 });
+    expect(parsePaging({}, 12)).toEqual({ limit: 12, page: 1 });
+  });
+
+  it('reads valid numbers', () => {
+    expect(parsePaging({ page: '3', limit: '20' })).toEqual({ limit: 20, page: 3 });
+  });
+
+  it('caps the limit', () => {
+    expect(parsePaging({ limit: '1000' }).limit).toBe(50);
+  });
+
+  it('falls back on anything that is not a positive whole number', () => {
+    for (const bad of ['abc', '-1', '0', '1.5', '', ' 2', '99999999999999999999', ['1', '2']]) {
+      expect(parsePaging({ page: bad, limit: bad }), String(bad)).toEqual({ limit: 10, page: 1 });
+    }
   });
 });
