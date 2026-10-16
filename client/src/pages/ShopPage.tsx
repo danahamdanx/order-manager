@@ -2,12 +2,18 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useCart } from '../cart/useCart';
+import { Pagination } from '../components/Pagination';
 import { ProductImage } from '../components/ProductImage';
 import { money } from '../lib/format';
 import { useDebounce } from '../lib/useDebounce';
+import { usePagedFetch } from '../lib/usePagedFetch';
 import { useSlowLoading } from '../lib/useSlowLoading';
+import { useUrlParams } from '../lib/useUrlParams';
 import { SORT_OPTIONS } from '../types';
 import type { Category, Product } from '../types';
+
+const DEFAULTS = { q: '', category: '', sort: 'newest', page: '1' };
+const PAGE_SIZE = 12;
 
 function ProductCard({ product }: { product: Product }) {
   const { add } = useCart();
@@ -50,17 +56,20 @@ function ProductCard({ product }: { product: Product }) {
 }
 
 export default function ShopPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const { values, update } = useUrlParams(DEFAULTS);
+  const search = useDebounce(values.q, 300);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState('');
-  const [sort, setSort] = useState('newest');
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
-  const slow = useSlowLoading(loading);
 
-  // التصنيفات بتيجي من السيرفر (الفلاتر ما بتتأثر بالمنتجات المعروضة)
+  const { data, loading, error } = usePagedFetch<Product>('/products', {
+    category: values.category,
+    sort: values.sort,
+    search: search.trim(),
+    page: values.page,
+    limit: String(PAGE_SIZE),
+  });
+  const slow = useSlowLoading(loading && !data);
+
+  // التصنيفات بتيجي من السيرفر، فالفلاتر ما بتتأثر بالمنتجات المعروضة
   useEffect(() => {
     api
       .get<Category[]>('/categories')
@@ -69,28 +78,6 @@ export default function ShopPage() {
         // الفلاتر اختيارية، فإذا فشلت الصفحة بتضل شغالة بدونها
       });
   }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-
-    const query = new URLSearchParams({ sort });
-    if (category) query.set('category', category);
-    if (debouncedSearch.trim()) query.set('search', debouncedSearch.trim());
-
-    api
-      .get<Product[]>(`/products?${query}`, controller.signal)
-      .then(setProducts)
-      .catch((err: Error) => {
-        if (err.name === 'AbortError') return;
-        setError(err.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [category, sort, debouncedSearch]);
 
   return (
     <>
@@ -108,11 +95,11 @@ export default function ShopPage() {
             className="search"
             type="search"
             placeholder="Search products"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={values.q}
+            onChange={(e) => update({ q: e.target.value }, { replace: true })}
             aria-label="Search products"
           />
-          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort products">
+          <select value={values.sort} onChange={(e) => update({ sort: e.target.value })} aria-label="Sort products">
             {SORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
@@ -122,9 +109,9 @@ export default function ShopPage() {
           {[{ name: '', count: 0 }, ...categories].map((c) => (
             <button
               key={c.name || 'all'}
-              className={`chip ${category === c.name ? 'active' : ''}`}
-              aria-pressed={category === c.name}
-              onClick={() => setCategory(c.name)}
+              className={`chip ${values.category === c.name ? 'active' : ''}`}
+              aria-pressed={values.category === c.name}
+              onClick={() => update({ category: c.name })}
             >
               {c.name || 'All'}
             </button>
@@ -132,19 +119,34 @@ export default function ShopPage() {
         </div>
       </div>
 
-      {loading && (
+      {!data && loading && (
         <p className="muted">
           {slow ? 'Waking up the server. The first visit can take up to a minute…' : 'Loading products…'}
         </p>
       )}
       {error && <p className="alert-error" role="alert">{error}</p>}
-      {!loading && !error && products.length === 0 && <p className="muted">No products found.</p>}
+      {data && data.items.length === 0 && <p className="muted">No products found.</p>}
 
-      <div className="grid">
-        {products.map((p) => (
-          <ProductCard key={p.id} product={p} />
-        ))}
-      </div>
+      {data && (
+        <div className={`grid ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
+          {data.items.map((p) => (
+            <ProductCard key={p.id} product={p} />
+          ))}
+        </div>
+      )}
+
+      {data && (
+        <Pagination
+          page={data.page}
+          pages={data.pages}
+          total={data.total}
+          pageSize={PAGE_SIZE}
+          onChange={(page) => {
+            update({ page: String(page) });
+            window.scrollTo({ top: 0 });
+          }}
+        />
+      )}
     </>
   );
 }

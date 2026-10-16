@@ -1,57 +1,30 @@
-import { useEffect, useState } from 'react';
-import { api } from '../../api';
+import { useState } from 'react';
 import { useAuth } from '../../auth/useAuth';
 import { OrderDialog } from '../../components/OrderDialog';
+import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
 import { StatusFilter } from '../../components/StatusFilter';
 import { formatDate, itemsSummary, money } from '../../lib/format';
 import { useDebounce } from '../../lib/useDebounce';
+import { usePagedFetch } from '../../lib/usePagedFetch';
+import { useUrlParams } from '../../lib/useUrlParams';
 import type { Order } from '../../types';
+
+const DEFAULTS = { q: '', status: '', page: '1' };
+const PAGE_SIZE = 10;
 
 export default function OrdersPage() {
   const { user } = useAuth();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState('');
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
+  const { values, update } = useUrlParams(DEFAULTS);
+  const search = useDebounce(values.q, 300);
   const [selected, setSelected] = useState<Order | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-
-    const query = new URLSearchParams();
-    if (status) query.set('status', status);
-    if (debouncedSearch.trim()) query.set('search', debouncedSearch.trim());
-
-    api
-      .get<Order[]>(`/orders?${query}`, controller.signal)
-      .then(setOrders)
-      .catch((err: Error) => {
-        if (err.name === 'AbortError') return;
-        setError(err.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [status, debouncedSearch]);
-
-  function handleUpdated(updated: Order) {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === updated.id ? updated : o)).filter((o) => !status || o.status === status),
-    );
-    setSelected(null);
-  }
-
-  function handleDeleted(id: number) {
-    setOrders((prev) => prev.filter((o) => o.id !== id));
-    setSelected(null);
-  }
+  const { data, loading, error, reload } = usePagedFetch<Order>('/orders', {
+    status: values.status,
+    search: search.trim(),
+    page: values.page,
+    limit: String(PAGE_SIZE),
+  });
 
   return (
     <>
@@ -64,19 +37,19 @@ export default function OrdersPage() {
           className="search"
           type="search"
           placeholder="Search by customer, email or order ID"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={values.q}
+          onChange={(e) => update({ q: e.target.value }, { replace: true })}
           aria-label="Search orders"
         />
-        <StatusFilter value={status} onChange={setStatus} />
+        <StatusFilter value={values.status} onChange={(status) => update({ status })} />
       </div>
 
-      {loading && <p className="muted">Loading orders…</p>}
+      {!data && loading && <p className="muted">Loading orders…</p>}
       {error && <p className="alert-error" role="alert">{error}</p>}
-      {!loading && !error && orders.length === 0 && <p className="muted">No orders found.</p>}
+      {data && data.items.length === 0 && <p className="muted">No orders found.</p>}
 
-      {!loading && !error && orders.length > 0 && (
-        <div className="card table-wrap">
+      {data && data.items.length > 0 && (
+        <div className={`card table-wrap ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
           <table>
             <thead>
               <tr>
@@ -90,7 +63,7 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
+              {data.items.map((o) => (
                 <tr key={o.id}>
                   <td>#{o.id}</td>
                   <td>
@@ -114,14 +87,30 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {data && (
+        <Pagination
+          page={data.page}
+          pages={data.pages}
+          total={data.total}
+          pageSize={PAGE_SIZE}
+          onChange={(page) => update({ page: String(page) })}
+        />
+      )}
+
       {selected && (
         <OrderDialog
           key={selected.id}
           order={selected}
           canDelete={user?.role === 'admin'}
           onClose={() => setSelected(null)}
-          onUpdated={handleUpdated}
-          onDeleted={handleDeleted}
+          onUpdated={() => {
+            setSelected(null);
+            reload();
+          }}
+          onDeleted={() => {
+            setSelected(null);
+            reload();
+          }}
         />
       )}
     </>

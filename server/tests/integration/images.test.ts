@@ -94,12 +94,12 @@ describe('categories and sorting', () => {
       await create({ name, price, category: 'SortTest' });
     }
     const prices = async (sort: string) =>
-      (await request(app).get(`/api/products?category=SortTest&sort=${sort}`)).body.map((p: { price: number }) => p.price);
+      (await request(app).get(`/api/products?category=SortTest&sort=${sort}`)).body.items.map((p: { price: number }) => p.price);
 
     expect(await prices('price_asc')).toEqual([10, 20, 30]);
     expect(await prices('price_desc')).toEqual([30, 20, 10]);
 
-    const names = (await request(app).get('/api/products?category=SortTest&sort=name')).body.map((p: { name: string }) => p.name);
+    const names = (await request(app).get('/api/products?category=SortTest&sort=name')).body.items.map((p: { name: string }) => p.name);
     expect(names).toEqual(['Alpha', 'Mid', 'Zeta']);
   });
 

@@ -25,6 +25,7 @@ A full-stack order management app. Customers sign up, browse products, place ord
 - Admins can delete orders and create staff accounts
 - Product management: create, edit, archive and delete products, with stock tracking and low-stock badges
 - Product photos (uploaded from the admin panel),categories, and sorting in the shop
+- Paginated lists with filters and page numbers kept in the URL
 
 ## Tech stack
 
@@ -134,6 +135,8 @@ The integration tests cover authentication, role-based access, server-side prici
 | GET    | /api/products/:id/image               | public                                            |
 | PUT    | /api/products/:id/image               | admin (JPEG, PNG or WebP, max 1 MB)               |
 | DELETE | /api/products/:id/image               | admin                                             |
+
+List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/products`) return `{ items, total, page, pages }` and accept `page` and `limit` (default 10, shop 12, max 50). Pages beyond the last one return the last page.
 
 ## Design decisions
 

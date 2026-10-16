@@ -107,3 +107,10 @@ export const SORT_OPTIONS = [
   { value: 'price_desc', label: 'Price: high to low' },
   { value: 'name', label: 'Name: A to Z' },
 ] as const;
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pages: number;
+}

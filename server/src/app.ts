@@ -5,7 +5,8 @@ import jwt from 'jsonwebtoken';
 import { pool, query, queryOne, withTransaction, STATUSES } from './db.js';
 import type { Role, Status } from './db.js';
 import { authenticate, authorizeRoles, JWT_SECRET } from './auth.js';
-import { isValidEmail, parseOrderItems, parseProductInput , sniffImageType } from './validation.js';
+import type { QueryResultRow } from 'pg';
+import { isValidEmail, parseOrderItems, parsePaging, parseProductInput, sniffImageType } from './validation.js';
 
 const SHIPPING = 5;
 
@@ -69,6 +70,26 @@ const bind = (params: unknown[], value: unknown) => {
   params.push(value);
   return `$${params.length}`;
 };
+
+// بتجيب العدد الكلي، وبتحصر رقم الصفحة بين 1 وآخر صفحة، وبتجيب العناصر
+async function queryPage<T extends QueryResultRow>(
+  countSql: string,
+  listSql: string,
+  params: unknown[],
+  paging: { page: number; limit: number },
+) {
+  const counted = await queryOne<{ total: number }>(countSql, params);
+  const total = counted?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / paging.limit));
+  const page = Math.min(paging.page, pages);
+
+  const listParams = [...params];
+  const items = await query<T>(
+    `${listSql} LIMIT ${bind(listParams, paging.limit)} OFFSET ${bind(listParams, (page - 1) * paging.limit)}`,
+    listParams,
+  );
+  return { items, total, page, pages };
+}
 
 // id غير صالح بيرجع 404 بدل ما يوصل لقاعدة البيانات ويعمل خطأ
 function idOf(value: unknown): number {
@@ -287,8 +308,16 @@ app.get('/api/products', async (req, res) => {
     where.push(`(p.name ILIKE ${like} OR p.description ILIKE ${like})`);
   }
   const sortKey = typeof sort === 'string' && Object.hasOwn(SORTS, sort) ? sort : 'newest';
+  const whereSql = `WHERE ${where.join(' AND ')}`;
 
-  res.json(await query(`${PRODUCT_SELECT} WHERE ${where.join(' AND ')} ORDER BY ${SORTS[sortKey]}`, params));
+  res.json(
+    await queryPage(
+      `SELECT COUNT(*) AS total FROM products p JOIN categories c ON c.id = p.category_id ${whereSql}`,
+      `${PRODUCT_SELECT} ${whereSql} ORDER BY ${SORTS[sortKey]}`,
+      params,
+      parsePaging(req.query, 12),
+    ),
+  );
 });
 
 app.get('/api/products/:id', async (req, res) => {
@@ -314,9 +343,27 @@ app.get('/api/products/:id/image', async (req, res) => {
   res.send(image.data);
 });
 
-// staff و admin بيشوفوا كل المنتجات (بما فيها المؤرشفة)
-app.get('/api/admin/products', authenticate, authorizeRoles('admin', 'staff'), async (_req, res) => {
-  res.json(await query(`${PRODUCT_SELECT} ORDER BY p.id`));
+// staff و admin. المؤرشفة بتظهر بس مع ?includeArchived=true
+app.get('/api/admin/products', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
+  const { search, includeArchived } = req.query;
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (includeArchived !== 'true') where.push('p.active = true');
+  if (typeof search === 'string' && search.trim()) {
+    const like = bind(params, `%${search.trim()}%`);
+    where.push(`(p.name ILIKE ${like} OR c.name ILIKE ${like})`);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  res.json(
+    await queryPage(
+      `SELECT COUNT(*) AS total FROM products p JOIN categories c ON c.id = p.category_id ${whereSql}`,
+      `${PRODUCT_SELECT} ${whereSql} ORDER BY p.id DESC`,
+      params,
+      parsePaging(req.query),
+    ),
+  );
 });
 
 app.post('/api/products', authenticate, authorizeRoles('admin'), async (req, res) => {
@@ -467,12 +514,15 @@ app.get('/api/orders', authenticate, authorizeRoles('admin', 'staff'), async (re
     const raw = bind(params, search.trim());
     where.push(`(u.name ILIKE ${like} OR u.email ILIKE ${like} OR CAST(o.id AS TEXT) = ${raw})`);
   }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  const orders = await query<OrderRow>(
-    `${ORDER_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY o.id DESC`,
+  const result = await queryPage<OrderRow>(
+    `SELECT COUNT(*) AS total FROM orders o JOIN users u ON u.id = o.user_id ${whereSql}`,
+    `${ORDER_SELECT} ${whereSql} ORDER BY o.id DESC`,
     params,
+    parsePaging(req.query),
   );
-  res.json(await attachItems(orders));
+  res.json({ ...result, items: await attachItems(result.items) });
 });
 
 // الزبون بيشوف طلباته بس، والـ staff/admin بيشوفوا الكل
@@ -510,7 +560,8 @@ app.get('/api/customers', authenticate, authorizeRoles('admin', 'staff'), async 
   }
 
   res.json(
-    await query(
+    await queryPage(
+      `SELECT COUNT(*) AS total FROM users u WHERE u.role = 'customer' ${filter}`,
       `SELECT u.id, u.name, u.email, u.phone, u.created_at AS "createdAt",
               COUNT(o.id) AS "ordersCount",
               ROUND(COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN o.total END), 0), 2) AS "totalSpent"
@@ -518,6 +569,7 @@ app.get('/api/customers', authenticate, authorizeRoles('admin', 'staff'), async 
        WHERE u.role = 'customer' ${filter}
        GROUP BY u.id ORDER BY u.id`,
       params,
+      parsePaging(req.query, 12),
     ),
   );
 });

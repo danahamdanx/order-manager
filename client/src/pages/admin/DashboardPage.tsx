@@ -6,7 +6,7 @@ import { CountUp } from '../../components/CountUp';
 import { StatusBadge } from '../../components/StatusBadge';
 import { formatDate, money } from '../../lib/format';
 import { STATUSES } from '../../types';
-import type { Order, Stats } from '../../types';
+import type { Order, Page, Stats } from '../../types';
 
 function greeting() {
   const h = new Date().getHours();
@@ -21,10 +21,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([api.get<Stats>('/stats', controller.signal), api.get<Order[]>('/orders', controller.signal)])
+        Promise.all([
+      api.get<Stats>('/stats', controller.signal),
+      api.get<Page<Order>>('/orders?limit=5', controller.signal),
+    ])
       .then(([s, orders]) => {
         setStats(s);
-        setRecent(orders.slice(0, 5));
+        setRecent(orders.items);
       })
       .catch((err: Error) => {
         if (err.name === 'AbortError') return;

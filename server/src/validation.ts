@@ -99,3 +99,12 @@ export function sniffImageType(buf: Buffer): 'image/jpeg' | 'image/png' | 'image
   if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
   return null;
 }
+
+// بنقرأ page و limit بحذر: أي قيمة مش رقم صحيح موجب بنرجع للافتراضي، والـ limit له حد أعلى
+export function parsePaging(query: Record<string, unknown>, defaultLimit = 10, maxLimit = 50) {
+  const toInt = (value: unknown, fallback: number) => {
+    const n = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : NaN;
+    return Number.isSafeInteger(n) && n > 0 ? n : fallback;
+  };
+  return { limit: Math.min(toInt(query.limit, defaultLimit), maxLimit), page: toInt(query.page, 1) };
+}
