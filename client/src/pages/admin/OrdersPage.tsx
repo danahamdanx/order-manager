@@ -8,6 +8,7 @@ import { formatDate, itemsSummary, money } from '../../lib/format';
 import { useDebounce } from '../../lib/useDebounce';
 import { usePagedFetch } from '../../lib/usePagedFetch';
 import { useUrlParams } from '../../lib/useUrlParams';
+import { PaymentBadge } from '../../components/PaymentBadge';
 import type { Order } from '../../types';
 
 const DEFAULTS = { q: '', status: '', page: '1' };
@@ -58,6 +59,7 @@ export default function OrdersPage() {
                 <th>Items</th>
                 <th>Total</th>
                 <th>Status</th>
+                <th>Payment</th>
                 <th>Date</th>
                 <th></th>
               </tr>
@@ -74,6 +76,7 @@ export default function OrdersPage() {
                   <td>{itemsSummary(o.items)}</td>
                   <td>{money(o.total)}</td>
                   <td><StatusBadge status={o.status} /></td>
+                  <td><PaymentBadge status={o.paymentStatus} /></td>
                   <td>{formatDate(o.createdAt)}</td>
                   <td>
                     <button className="link-btn link-brand" onClick={() => setSelected(o)} aria-label={`View order ${o.id}`}>

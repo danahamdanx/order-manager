@@ -59,3 +59,4 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   putImage: <T>(path: string, blob: Blob) => request<T>(path, { method: 'PUT', blob }),
 };
+

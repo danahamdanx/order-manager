@@ -3,11 +3,10 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool, query, queryOne, withTransaction, STATUSES } from './db.js';
-import type { Role, Status } from './db.js';
 import { authenticate, authorizeRoles, JWT_SECRET } from './auth.js';
 import type { QueryResultRow } from 'pg';
-import { isValidEmail, parseOrderItems, parsePaging, parseProductInput, sniffImageType } from './validation.js';
-
+import type { PaymentStatus, Role, Status } from './db.js';
+import { isValidEmail, parseOrderItems, parsePaging, parsePaymentInput, parseProductInput, sniffImageType } from './validation.js';
 const SHIPPING = 5;
 
 class HttpError extends Error {
@@ -49,7 +48,11 @@ interface OrderRow {
   total: number;
   shipping: number;
   address: string;
+  paymentStatus: PaymentStatus;
+  cardBrand: string | null;
+  cardLast4: string | null;
   createdAt: Date;
+  
 }
 interface OrderItemRow {
   productId: number;
@@ -123,7 +126,10 @@ async function createUser(body: any, role: Role): Promise<UserRow> {
 
 const ORDER_SELECT = `
   SELECT o.id, o.user_id AS "userId", u.name AS "customerName", u.email AS "customerEmail",
-         o.status, o.total, o.shipping, o.address, o.created_at AS "createdAt"
+         o.status, o.payment_status AS "paymentStatus", o.total, o.shipping, o.address,
+         o.created_at AS "createdAt",
+         (SELECT pm.card_brand FROM payments pm WHERE pm.order_id = o.id ORDER BY pm.id DESC LIMIT 1) AS "cardBrand",
+         (SELECT pm.card_last4 FROM payments pm WHERE pm.order_id = o.id ORDER BY pm.id DESC LIMIT 1) AS "cardLast4"
   FROM orders o JOIN users u ON u.id = o.user_id`;
 
 // بنجيب بنود كل الطلبات بـ query واحد (بدل query لكل طلب)
@@ -155,10 +161,16 @@ async function loadOrder(id: number) {
   return (await attachItems([order]))[0];
 }
 
-// تغيير الحالة داخل transaction، مع قفل صف الطلب. وبيرجع المخزون إذا انلغى الطلب
+// هدول الحالات بتحتاج دفع كامل قبلها
+const PAID_REQUIRED: Status[] = ['processing', 'shipped', 'delivered'];
+
+// تغيير الحالة داخل transaction، مع قفل صف الطلب
 async function changeStatus(orderId: number, next: Status, onlyFrom?: Status) {
   await withTransaction(async (client) => {
-    const found = await client.query<{ status: Status }>('SELECT status FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+    const found = await client.query<{ status: Status; payment_status: PaymentStatus }>(
+      'SELECT status, payment_status FROM orders WHERE id = $1 FOR UPDATE',
+      [orderId],
+    );
     const order = found.rows[0];
     if (!order) throw new HttpError(404, 'Order not found');
     if (onlyFrom && order.status !== onlyFrom) {
@@ -167,12 +179,22 @@ async function changeStatus(orderId: number, next: Status, onlyFrom?: Status) {
     if (order.status === 'delivered' || order.status === 'cancelled') {
       throw new HttpError(409, `Order is already ${order.status}`);
     }
+    if (PAID_REQUIRED.includes(next) && order.payment_status !== 'paid') {
+      throw new HttpError(409, 'The order must be paid before it can be processed');
+    }
+
     if (next === 'cancelled') {
+      // بنرجع المخزون
       await client.query(
         `UPDATE products p SET stock = p.stock + oi.quantity
          FROM order_items oi WHERE oi.order_id = $1 AND oi.product_id = p.id`,
         [orderId],
       );
+      // وإذا الطلب مدفوع، بنعتبر الدفعة مستردة
+      if (order.payment_status === 'paid') {
+        await client.query(`UPDATE payments SET status = 'refunded' WHERE order_id = $1 AND status = 'succeeded'`, [orderId]);
+        await client.query(`UPDATE orders SET payment_status = 'refunded' WHERE id = $1`, [orderId]);
+      }
     }
     await client.query('UPDATE orders SET status = $1 WHERE id = $2', [next, orderId]);
   });
@@ -500,6 +522,35 @@ app.post('/api/orders/:id/cancel', authenticate, authorizeRoles('customer'), asy
   res.json(await loadOrder(id));
 });
 
+// مؤقت: بيسجل دفعة ناجحة. بـ Issue 8 بنستبدله بتأكيد من البوابة (gateway)
+app.post('/api/orders/:id/pay', authenticate, authorizeRoles('customer'), async (req, res) => {
+  const id = idOf(req.params.id);
+  const { data, errors } = parsePaymentInput(req.body);
+  if (errors.length) throw new HttpError(400, 'Validation failed', errors);
+
+  await withTransaction(async (client) => {
+    // الشرط user_id بيمنع الدفع لطلب شخص ثاني، والنتيجة 404 مش 403
+    const found = await client.query<{ status: Status; payment_status: PaymentStatus; total: number }>(
+      'SELECT status, payment_status, total FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE',
+      [id, req.user!.user_id],
+    );
+    const order = found.rows[0];
+    if (!order) throw new HttpError(404, 'Order not found');
+    if (order.status === 'cancelled') throw new HttpError(409, 'A cancelled order cannot be paid');
+    if (order.payment_status === 'paid') throw new HttpError(409, 'This order is already paid');
+
+    // المبلغ من قاعدة البيانات، مش من الطلب
+    await client.query(
+      `INSERT INTO payments (order_id, amount, status, method, card_brand, card_last4)
+       VALUES ($1, $2, 'succeeded', 'card', $3, $4)`,
+      [id, order.total, data.cardBrand, data.cardLast4],
+    );
+    await client.query(`UPDATE orders SET payment_status = 'paid' WHERE id = $1`, [id]);
+  });
+
+  res.json(await loadOrder(id));
+});
+
 // ---------- Orders: staff / admin ----------
 app.get('/api/orders', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
   const { status, search } = req.query;
@@ -564,7 +615,7 @@ app.get('/api/customers', authenticate, authorizeRoles('admin', 'staff'), async 
       `SELECT COUNT(*) AS total FROM users u WHERE u.role = 'customer' ${filter}`,
       `SELECT u.id, u.name, u.email, u.phone, u.created_at AS "createdAt",
               COUNT(o.id) AS "ordersCount",
-              ROUND(COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN o.total END), 0), 2) AS "totalSpent"
+              ROUND(COALESCE(SUM(CASE WHEN o.payment_status = 'paid' THEN o.total END), 0), 2) AS "totalSpent"
        FROM users u LEFT JOIN orders o ON o.user_id = u.id
        WHERE u.role = 'customer' ${filter}
        GROUP BY u.id ORDER BY u.id`,
@@ -591,7 +642,7 @@ app.get('/api/stats', authenticate, authorizeRoles('admin', 'staff'), async (_re
   const [rows, revenueRow, customersRow] = await Promise.all([
     query<{ status: Status; count: number }>('SELECT status, COUNT(*) AS count FROM orders GROUP BY status'),
     queryOne<{ revenue: number }>(
-      `SELECT ROUND(COALESCE(SUM(total), 0), 2) AS revenue FROM orders WHERE status <> 'cancelled'`,
+      `SELECT ROUND(COALESCE(SUM(total), 0), 2) AS revenue FROM orders WHERE payment_status = 'paid'`,
     ),
     queryOne<{ customers: number }>(`SELECT COUNT(*) AS customers FROM users WHERE role = 'customer'`),
   ]);

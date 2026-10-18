@@ -33,8 +33,7 @@ export default function CustomerDetailPage() {
   }
   if (!customer) return <p className="muted">Loading…</p>;
 
-  const spent = customer.orders.filter((o) => o.status !== 'cancelled').reduce((sum, o) => sum + o.total, 0);
-
+  const spent = customer.orders.filter((o) => o.paymentStatus === 'paid').reduce((sum, o) => sum + o.total, 0);
   return (
     <>
       <p>

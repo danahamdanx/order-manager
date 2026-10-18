@@ -1382,3 +1382,62 @@ select {
   opacity: 0.55;
   transition: opacity 0.15s;
 }
+/* الدفع */
+.card-form {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 14px 0;
+}
+
+.card-form legend {
+  font-weight: 600;
+  padding: 0 6px;
+}
+
+.demo-banner {
+  background: #faeeda;
+  color: #633806;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.brand-tag {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--brand);
+  margin-left: 6px;
+}
+
+.badge-group {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.badge-pay-unpaid {
+  background: #faeeda;
+  color: #633806;
+}
+
+.badge-pay-paid {
+  background: #eaf3de;
+  color: #27500a;
+}
+
+.badge-pay-failed {
+  background: var(--danger-bg);
+  color: var(--danger-ink);
+}
+
+.badge-pay-refunded {
+  background: #eeedfe;
+  color: #3c3489;
+}
+
+.card-form input[aria-invalid="true"] {
+  border-color: var(--danger-ink);
+}
