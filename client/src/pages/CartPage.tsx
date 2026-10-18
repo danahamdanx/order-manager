@@ -4,15 +4,20 @@ import { api, ApiError } from '../api';
 import { useAuth } from '../auth/useAuth';
 import { SHIPPING } from '../cart/context';
 import { useCart } from '../cart/useCart';
+import { CardForm } from '../components/CardForm';
+import { ProductImage } from '../components/ProductImage';
+import { detectBrand, digitsOnly, emptyCard, validateCard } from '../lib/card';
+import type { CardErrors, CardFields } from '../lib/card';
 import { money } from '../lib/format';
 import type { Order } from '../types';
-import { ProductImage } from '../components/ProductImage';
 
 export default function CartPage() {
   const { lines, subtotal, setQuantity, remove, clear } = useCart();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [address, setAddress] = useState('');
+  const [card, setCard] = useState<CardFields>(emptyCard);
+  const [cardErrors, setCardErrors] = useState<CardErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
 
@@ -29,22 +34,43 @@ export default function CartPage() {
   }
 
   async function placeOrder() {
-    if (address.trim().length < 5) {
-      setError('Enter your delivery address (at least 5 characters)');
+    const cardProblems = validateCard(card);
+    setCardErrors(cardProblems);
+    const addressOk = address.trim().length >= 5;
+    if (!addressOk || Object.keys(cardProblems).length > 0) {
+      setError(!addressOk ? 'Enter your delivery address (at least 5 characters)' : 'Check your card details');
       return;
     }
     setError(null);
     setPlacing(true);
+
+    let order: Order;
     try {
-      const order = await api.post<Order>('/orders', {
+      order = await api.post<Order>('/orders', {
         address: address.trim(),
         items: lines.map((l) => ({ productId: l.product.id, quantity: l.quantity })),
       });
-      clear();
-      navigate('/my-orders', { state: { highlight: order.id } });
     } catch (err) {
       setError(err instanceof ApiError ? [err.message, ...err.details].join(': ') : 'Something went wrong');
       setPlacing(false);
+      return;
+    }
+
+    clear();
+    try {
+      const digits = digitsOnly(card.number);
+      // رقم البطاقة ما بيطلع من المتصفح: بنبعت بس النوع وآخر 4 أرقام
+      await api.post(`/orders/${order.id}/pay`, { cardBrand: detectBrand(digits), cardLast4: digits.slice(-4) });
+      navigate('/my-orders', { state: { highlight: order.id, notice: 'Payment received. Thank you for your order!' } });
+    } catch {
+      // الطلب انعمل بس الدفع ما تم: الزبون بيقدر يدفع من صفحة طلباتي
+      navigate('/my-orders', {
+        state: {
+          highlight: order.id,
+          noticeKind: 'error',
+          notice: 'Your order was created, but the payment did not go through. You can pay for it below.',
+        },
+      });
     }
   }
 
@@ -90,9 +116,12 @@ export default function CartPage() {
               <label htmlFor="address">Delivery address</label>
               <input id="address" value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />
             </div>
+
+            <CardForm value={card} errors={cardErrors} onChange={setCard} disabled={placing} />
+
             {error && <p className="alert-error" role="alert">{error}</p>}
             <button className="btn btn-primary btn-block" onClick={placeOrder} disabled={placing}>
-              {placing ? 'Placing order…' : 'Place order'}
+              {placing ? 'Processing…' : `Pay ${money(total)} and place order`}
             </button>
           </>
         ) : user ? (

@@ -54,16 +54,26 @@ export async function seed(pool: Pool) {
         [lina, 'delivered', 5, 'Mechanical Mouse', 19.99, '2026-09-19T16:20:00Z'],
         [omar, 'shipped', 4, 'Monitor 24"', 160, '2026-09-23T17:55:00Z'],
       ];
-      for (const [userId, status, productId, productName, price, at] of demo) {
+        for (const [userId, status, productId, productName, price, at] of demo) {
         const total = Math.round((price + 5) * 100) / 100;
+        const paid = status !== 'pending';
         const order = await client.query<{ id: number }>(
-          'INSERT INTO orders (user_id, status, address, shipping, total, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-          [userId, status, 'Demo address, Nablus', 5, total, at],
+          `INSERT INTO orders (user_id, status, payment_status, address, shipping, total, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [userId, status, paid ? 'paid' : 'unpaid', 'Demo address, Nablus', 5, total, at],
         );
+        const orderId = order.rows[0].id;
         await client.query(
           'INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity) VALUES ($1, $2, $3, $4, 1)',
-          [order.rows[0].id, productId, productName, price],
+          [orderId, productId, productName, price],
         );
+        if (paid) {
+          await client.query(
+            `INSERT INTO payments (order_id, amount, status, method, card_brand, card_last4, created_at)
+             VALUES ($1, $2, 'succeeded', 'card', 'visa', '4242', $3)`,
+            [orderId, total, at],
+          );
+        }
       }
       console.log('Seeded demo accounts: admin@example.com / Admin123!, lina@example.com / Customer123!');
     }

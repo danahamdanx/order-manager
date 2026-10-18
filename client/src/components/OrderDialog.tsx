@@ -4,6 +4,7 @@ import { formatDate, money } from '../lib/format';
 import { STATUSES } from '../types';
 import type { Order, Status } from '../types';
 import { ProductImage } from '../components/ProductImage';
+import { PaymentBadge } from './PaymentBadge';
 
 
 interface Props {
@@ -26,6 +27,8 @@ export function OrderDialog({ order, canDelete, onClose, onUpdated, onDeleted }:
 
   // السيرفر بيمنع تعديل الطلبات المسلّمة أو الملغية، فبنعطل الحقل هون كمان
   const locked = order.status === 'delivered' || order.status === 'cancelled';
+  const unpaid = order.paymentStatus !== 'paid';
+  const needsPayment = (s: Status) => unpaid && s !== order.status && ['processing', 'shipped', 'delivered'].includes(s);
 
   async function save() {
     setSaving(true);
@@ -57,6 +60,7 @@ export function OrderDialog({ order, canDelete, onClose, onUpdated, onDeleted }:
       <div className="sum-row"><span className="muted">Email</span><span>{order.customerEmail}</span></div>
       <div className="sum-row"><span className="muted">Placed on</span><span>{formatDate(order.createdAt)}</span></div>
       <div className="sum-row"><span className="muted">Address</span><span>{order.address}</span></div>
+      <div className="sum-row"><span className="muted">Payment</span><span><PaymentBadge status={order.paymentStatus} />{order.cardLast4 && <> {order.cardBrand} •••• {order.cardLast4}</>}</span></div>
 
       <div className="order-detail">
         {order.items.map((i) => (
@@ -78,11 +82,12 @@ export function OrderDialog({ order, canDelete, onClose, onUpdated, onDeleted }:
       <div className="field" style={{ marginTop: 14 }}>
         <label htmlFor="order-status">Status</label>
         <select id="order-status" value={status} onChange={(e) => setStatus(e.target.value as Status)} disabled={locked || saving}>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s} disabled={needsPayment(s)}>{s}</option>
           ))}
         </select>
         {locked && <span className="muted">This order is {order.status} and can't be changed.</span>}
+        {!locked && unpaid && <span className="muted">Waiting for payment: the order can be cancelled but not processed yet.</span>}
       </div>
 
       {error && <p className="alert-error" role="alert">{error}</p>}

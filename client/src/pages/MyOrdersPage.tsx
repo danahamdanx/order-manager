@@ -2,21 +2,35 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
 import { OrderTracker } from '../components/OrderTracker';
+import { PayDialog } from '../components/PayDialog';
+import { PaymentBadge } from '../components/PaymentBadge';
+import { ProductImage } from '../components/ProductImage';
 import { StatusBadge } from '../components/StatusBadge';
+import { BRAND_LABELS } from '../lib/card';
+import type { CardBrand } from '../lib/card';
 import { formatDate, money } from '../lib/format';
 import type { Order } from '../types';
-import { ProductImage } from '../components/ProductImage';
+
+interface LocationState {
+  highlight?: number;
+  notice?: string;
+  noticeKind?: 'success' | 'error';
+}
 
 export default function MyOrdersPage() {
   const location = useLocation();
-  const highlight = (location.state as { highlight?: number } | null)?.highlight;
+  const state = location.state as LocationState | null;
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(highlight ?? null);
+  const [selectedId, setSelectedId] = useState<number | null>(state?.highlight ?? null);
   const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; kind: 'success' | 'error' } | null>(
+    state?.notice ? { text: state.notice, kind: state.noticeKind ?? 'success' } : null,
+  );
+  const [payOrder, setPayOrder] = useState<Order | null>(null);
 
   // بنجيب الطلبات، وبنحدثها كل 15 ثانية عشان التتبع يتغير لما الإدارة تغير الحالة
   useEffect(() => {
@@ -60,6 +74,12 @@ export default function MyOrdersPage() {
     }
   }
 
+  function handlePaid(updated: Order) {
+    setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+    setPayOrder(null);
+    setNotice({ text: 'Payment received. Thank you!', kind: 'success' });
+  }
+
   if (loading) return <p className="muted">Loading your orders…</p>;
   if (error && orders.length === 0) return <p className="alert-error" role="alert">{error}</p>;
 
@@ -73,9 +93,20 @@ export default function MyOrdersPage() {
     );
   }
 
+  const canPay = selected.paymentStatus !== 'paid' && selected.status !== 'cancelled' && selected.paymentStatus !== 'refunded';
+  const cardLabel = selected.cardLast4
+    ? `${BRAND_LABELS[(selected.cardBrand as CardBrand) ?? 'other'] ?? 'Card'} •••• ${selected.cardLast4}`
+    : null;
+
   return (
     <>
       <h1 className="page-title">My orders</h1>
+      {notice && (
+        <p className={notice.kind === 'error' ? 'alert-error' : 'success'} role="status">
+          {notice.text}
+        </p>
+      )}
+
       <div className="orders">
         <div className="order-list">
           {orders.map((o) => (
@@ -87,7 +118,10 @@ export default function MyOrdersPage() {
             >
               <span className="sum-row" style={{ padding: 0 }}>
                 <strong>Order #{o.id}</strong>
-                <StatusBadge status={o.status} />
+                <span className="badge-group">
+                  <StatusBadge status={o.status} />
+                  <PaymentBadge status={o.paymentStatus} />
+                </span>
               </span>
               <span className="muted">
                 {o.items.map((i) => i.productName).join(', ')} · {money(o.total)}
@@ -115,18 +149,31 @@ export default function MyOrdersPage() {
             ))}
             <div className="sum-row"><span className="muted">Shipping</span><span>{money(selected.shipping)}</span></div>
             <div className="sum-row sum-total"><span>Total</span><span>{money(selected.total)}</span></div>
+            <div className="sum-row">
+              <span className="muted">Payment</span>
+              <span><PaymentBadge status={selected.paymentStatus} />{cardLabel && <> {cardLabel}</>}</span>
+            </div>
             <div className="sum-row"><span className="muted">Placed on</span><span>{formatDate(selected.createdAt)}</span></div>
             <div className="sum-row"><span className="muted">Delivery address</span><span>{selected.address}</span></div>
           </div>
 
           {actionError && <p className="alert-error" role="alert">{actionError}</p>}
-          {selected.status === 'pending' && (
-            <button className="btn btn-ghost-dark" onClick={() => cancel(selected.id)} disabled={cancelling}>
-              {cancelling ? 'Cancelling…' : 'Cancel order'}
-            </button>
-          )}
+          <div className="row-gap">
+            {canPay && (
+              <button className="btn btn-primary" onClick={() => setPayOrder(selected)}>
+                Pay now
+              </button>
+            )}
+            {selected.status === 'pending' && (
+              <button className="btn btn-ghost-dark" onClick={() => cancel(selected.id)} disabled={cancelling}>
+                {cancelling ? 'Cancelling…' : 'Cancel order'}
+              </button>
+            )}
+          </div>
         </section>
       </div>
+
+      {payOrder && <PayDialog key={payOrder.id} order={payOrder} onClose={() => setPayOrder(null)} onPaid={handlePaid} />}
     </>
   );
 }

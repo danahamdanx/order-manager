@@ -1,6 +1,7 @@
 export const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'] as const;
 export type Status = (typeof STATUSES)[number];
 export type Role = 'admin' | 'staff' | 'customer';
+export type PaymentStatus = 'unpaid' | 'paid' | 'failed' | 'refunded';
 
 export interface User {
   id: number;
@@ -43,6 +44,9 @@ export interface Order {
   address: string;
   createdAt: string;
   items: OrderItem[];
+  paymentStatus: PaymentStatus;
+  cardBrand: string | null;
+  cardLast4: string | null;
 }
 
 export interface Stats {

@@ -104,6 +104,11 @@ describe('orders', () => {
 
   it('does not allow cancelling once processing has started', async () => {
     const created = await place([{ productId: 5, quantity: 1 }]);
+    const paid = await request(app)
+      .post(`/api/orders/${created.body.id}/pay`)
+      .set(auth(customer))
+      .send({ cardBrand: 'visa', cardLast4: '4242' });
+    expect(paid.status).toBe(200);
     const patch = await request(app)
       .patch(`/api/orders/${created.body.id}/status`)
       .set(auth(admin))

@@ -3,6 +3,7 @@ import type { PoolClient, QueryResultRow } from 'pg';
 
 export const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'] as const;
 export type Status = (typeof STATUSES)[number];
+export type PaymentStatus = 'unpaid' | 'paid' | 'failed' | 'refunded';
 export type Role = 'admin' | 'staff' | 'customer';
 
 // pg بيرجع NUMERIC و bigint (مثل COUNT) كنصوص، فبنحولهم لأرقام
