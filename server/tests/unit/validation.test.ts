@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEmail, parseOrderItems, parsePaging, parseProductInput, sniffImageType, parsePaymentInput } from '../../src/validation';
+import { isValidEmail, parseOrderItems, parsePaging, parseProductInput, sniffImageType, parseIdempotencyKey } from '../../src/validation';
 
 describe('isValidEmail', () => {
   it('accepts normal addresses', () => {
@@ -112,23 +112,15 @@ describe('parsePaging', () => {
   });
 });
 
-describe('parsePaymentInput', () => {
-  it('accepts a brand and the last four digits', () => {
-    const { data, errors } = parsePaymentInput({ cardBrand: 'visa', cardLast4: '4242' });
-    expect(errors).toEqual([]);
-    expect(data).toEqual({ cardBrand: 'visa', cardLast4: '4242' });
+describe('parseIdempotencyKey', () => {
+  it('accepts UUIDs and simple keys', () => {
+    expect(parseIdempotencyKey('3f2b8a52-7c1e-4d3a-9a55-0c6f4e1b2a9d')).not.toBeNull();
+    expect(parseIdempotencyKey('retry_key-12345')).toBe('retry_key-12345');
   });
 
-  it('rejects a full card number, unknown brands and non-strings', () => {
-    const bad = [
-      {},
-      { cardBrand: 'visa', cardLast4: '4242424242424242' },
-      { cardBrand: 'visa', cardLast4: '42' },
-      { cardBrand: 'visa', cardLast4: 4242 },
-      { cardBrand: 'bitcoin', cardLast4: '4242' },
-    ];
-    for (const body of bad) {
-      expect(parsePaymentInput(body).errors.length, JSON.stringify(body)).toBeGreaterThan(0);
+  it('rejects missing, short, long and odd values', () => {
+    for (const bad of [undefined, '', 'short', 'x'.repeat(65), 'has spaces here', 'semi;colon;key', 42]) {
+      expect(parseIdempotencyKey(bad), String(bad)).toBeNull();
     }
   });
 });

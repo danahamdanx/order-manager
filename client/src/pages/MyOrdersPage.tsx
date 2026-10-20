@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
 import { OrderTracker } from '../components/OrderTracker';
@@ -10,16 +9,21 @@ import { BRAND_LABELS } from '../lib/card';
 import type { CardBrand } from '../lib/card';
 import { formatDate, money } from '../lib/format';
 import type { Order } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import { failureMessage } from '../lib/payments';
 
 interface LocationState {
   highlight?: number;
   notice?: string;
   noticeKind?: 'success' | 'error';
+  openPay?: boolean;
 }
 
 export default function MyOrdersPage() {
   const location = useLocation();
   const state = location.state as LocationState | null;
+  const initial = useRef(state);
+  const autoOpen = useRef(Boolean(state?.openPay));
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +46,11 @@ export default function MyOrdersPage() {
           if (!active) return;
           setOrders(data);
           setError(null);
+          if (autoOpen.current) {
+            autoOpen.current = false;
+            const target = data.find((o) => o.id === initial.current?.highlight && o.paymentStatus !== 'paid');
+            if (target) setPayOrder(target);
+          }
         })
         .catch((err: Error) => {
           if (active) setError(err.message);
@@ -153,6 +162,12 @@ export default function MyOrdersPage() {
               <span className="muted">Payment</span>
               <span><PaymentBadge status={selected.paymentStatus} />{cardLabel && <> {cardLabel}</>}</span>
             </div>
+            {selected.paymentStatus === 'failed' && (
+              <div className="sum-row">
+                <span className="muted">Last attempt</span>
+                <span>{failureMessage(selected.paymentFailure)}</span>
+              </div>
+            )}
             <div className="sum-row"><span className="muted">Placed on</span><span>{formatDate(selected.createdAt)}</span></div>
             <div className="sum-row"><span className="muted">Delivery address</span><span>{selected.address}</span></div>
           </div>

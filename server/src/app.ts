@@ -6,24 +6,24 @@ import { pool, query, queryOne, withTransaction, STATUSES } from './db.js';
 import { authenticate, authorizeRoles, JWT_SECRET } from './auth.js';
 import type { QueryResultRow } from 'pg';
 import type { PaymentStatus, Role, Status } from './db.js';
-import { isValidEmail, parseOrderItems, parsePaging, parsePaymentInput, parseProductInput, sniffImageType } from './validation.js';
-const SHIPPING = 5;
+import { isValidEmail, parseOrderItems, parsePaging, parseIdempotencyKey, parseProductInput, sniffImageType } from './validation.js';
+import { HttpError } from './errors.js';
+import { createMockGatewayRouter } from './gateway/mock.js';
+import { getPayment, paymentResponse, processGatewayEvent, startPayment } from './payments.js';
 
-class HttpError extends Error {
-  status: number;
-  details: string[];
-  constructor(status: number, message: string, details: string[] = []) {
-    super(message);
-    this.status = status;
-    this.details = details;
-  }
-}
+
+const SHIPPING = 5;
 
 const app = express();
 const allowedOrigins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((o) => o.trim());
 app.use(cors({ origin: allowedOrigins }));
-app.use(express.json());
-
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as express.Request).rawBody = buf;
+    },
+  }),
+);
 // ---------- Types ----------
 interface UserRow {
   id: number;
@@ -51,8 +51,8 @@ interface OrderRow {
   paymentStatus: PaymentStatus;
   cardBrand: string | null;
   cardLast4: string | null;
+  paymentFailure: string | null;
   createdAt: Date;
-  
 }
 interface OrderItemRow {
   productId: number;
@@ -128,8 +128,12 @@ const ORDER_SELECT = `
   SELECT o.id, o.user_id AS "userId", u.name AS "customerName", u.email AS "customerEmail",
          o.status, o.payment_status AS "paymentStatus", o.total, o.shipping, o.address,
          o.created_at AS "createdAt",
-         (SELECT pm.card_brand FROM payments pm WHERE pm.order_id = o.id ORDER BY pm.id DESC LIMIT 1) AS "cardBrand",
-         (SELECT pm.card_last4 FROM payments pm WHERE pm.order_id = o.id ORDER BY pm.id DESC LIMIT 1) AS "cardLast4"
+         (SELECT pm.card_brand FROM payments pm WHERE pm.order_id = o.id AND pm.status IN ('succeeded', 'refunded')
+           ORDER BY pm.id DESC LIMIT 1) AS "cardBrand",
+         (SELECT pm.card_last4 FROM payments pm WHERE pm.order_id = o.id AND pm.status IN ('succeeded', 'refunded')
+           ORDER BY pm.id DESC LIMIT 1) AS "cardLast4",
+         (SELECT pm.failure_reason FROM payments pm WHERE pm.order_id = o.id AND pm.status = 'failed'
+           ORDER BY pm.id DESC LIMIT 1) AS "paymentFailure"
   FROM orders o JOIN users u ON u.id = o.user_id`;
 
 // بنجيب بنود كل الطلبات بـ query واحد (بدل query لكل طلب)
@@ -182,7 +186,6 @@ async function changeStatus(orderId: number, next: Status, onlyFrom?: Status) {
     if (PAID_REQUIRED.includes(next) && order.payment_status !== 'paid') {
       throw new HttpError(409, 'The order must be paid before it can be processed');
     }
-
     if (next === 'cancelled') {
       // بنرجع المخزون
       await client.query(
@@ -190,9 +193,18 @@ async function changeStatus(orderId: number, next: Status, onlyFrom?: Status) {
          FROM order_items oi WHERE oi.order_id = $1 AND oi.product_id = p.id`,
         [orderId],
       );
+      // أي دفعة مفتوحة بتنسكّر (مش ممكن تنجح بعد الإلغاء)
+      await client.query(
+        `UPDATE payments SET status = 'failed', failure_reason = 'order_cancelled', updated_at = now()
+         WHERE order_id = $1 AND status = 'requires_payment'`,
+        [orderId],
+      );
       // وإذا الطلب مدفوع، بنعتبر الدفعة مستردة
       if (order.payment_status === 'paid') {
-        await client.query(`UPDATE payments SET status = 'refunded' WHERE order_id = $1 AND status = 'succeeded'`, [orderId]);
+        await client.query(
+          `UPDATE payments SET status = 'refunded', updated_at = now() WHERE order_id = $1 AND status = 'succeeded'`,
+          [orderId],
+        );
         await client.query(`UPDATE orders SET payment_status = 'refunded' WHERE id = $1`, [orderId]);
       }
     }
@@ -522,34 +534,38 @@ app.post('/api/orders/:id/cancel', authenticate, authorizeRoles('customer'), asy
   res.json(await loadOrder(id));
 });
 
-// مؤقت: بيسجل دفعة ناجحة. بـ Issue 8 بنستبدله بتأكيد من البوابة (gateway)
-app.post('/api/orders/:id/pay', authenticate, authorizeRoles('customer'), async (req, res) => {
-  const id = idOf(req.params.id);
-  const { data, errors } = parsePaymentInput(req.body);
-  if (errors.length) throw new HttpError(400, 'Validation failed', errors);
 
-  await withTransaction(async (client) => {
-    // الشرط user_id بيمنع الدفع لطلب شخص ثاني، والنتيجة 404 مش 403
-    const found = await client.query<{ status: Status; payment_status: PaymentStatus; total: number }>(
-      'SELECT status, payment_status, total FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE',
-      [id, req.user!.user_id],
-    );
-    const order = found.rows[0];
-    if (!order) throw new HttpError(404, 'Order not found');
-    if (order.status === 'cancelled') throw new HttpError(409, 'A cancelled order cannot be paid');
-    if (order.payment_status === 'paid') throw new HttpError(409, 'This order is already paid');
+// ---------- Payments ----------
 
-    // المبلغ من قاعدة البيانات، مش من الطلب
-    await client.query(
-      `INSERT INTO payments (order_id, amount, status, method, card_brand, card_last4)
-       VALUES ($1, $2, 'succeeded', 'card', $3, $4)`,
-      [id, order.total, data.cardBrand, data.cardLast4],
-    );
-    await client.query(`UPDATE orders SET payment_status = 'paid' WHERE id = $1`, [id]);
-  });
+app.post('/api/payments', authenticate, authorizeRoles('customer'), async (req, res) => {
+  const key = parseIdempotencyKey(req.header('idempotency-key'));
+  if (!key) {
+    throw new HttpError(400, 'Validation failed', [
+      'Idempotency-Key header is required (8 to 64 letters, digits, - or _)',
+    ]);
+  }
+  const orderId = req.body?.orderId;
+  if (!Number.isInteger(orderId) || orderId < 1 || orderId > 2147483647) {
+    throw new HttpError(400, 'Validation failed', ['orderId must be a valid order id']);
+  }
 
-  res.json(await loadOrder(id));
+  const { payment, created } = await startPayment(req.user!.user_id, orderId, key);
+  res.status(created ? 201 : 200).json(await paymentResponse(payment, true));
 });
+
+app.get('/api/payments/:id', authenticate, async (req, res) => {
+  res.json(await getPayment(idOf(req.params.id), req.user!));
+});
+
+// الـ webhook: التأكيد الحقيقي للدفع بيجي من البوابة، والتوقيع هو الثقة الوحيدة
+app.post('/api/webhooks/gateway', async (req, res) => {
+  const raw = req.rawBody?.toString('utf8');
+  if (!raw) throw new HttpError(400, 'Missing request body');
+  res.json(await processGatewayEvent(raw, req.header('x-gateway-signature')));
+});
+
+// البوابة التجريبية: بتمثل خدمة خارجية (مع بوابة حقيقية بتكون على دومين ثاني)
+app.use('/mock-gateway/v1', createMockGatewayRouter(processGatewayEvent));
 
 // ---------- Orders: staff / admin ----------
 app.get('/api/orders', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {

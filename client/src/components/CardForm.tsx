@@ -18,9 +18,9 @@ export function CardForm({ value, errors, onChange, disabled }: Props) {
     <fieldset className="card-form" disabled={disabled}>
       <legend>Payment</legend>
       <p className="demo-banner">
-        Demo checkout: no real payment is made. Never enter a real card. Use 4242 4242 4242 4242, any future date and any code.
+        Demo checkout: no real payment is made. Never enter a real card. Test cards: 4242 4242 4242 4242 (approved),
+        4000 0000 0000 0002 (declined), 4000 0000 0000 9995 (insufficient funds). Use any future date and any code.
       </p>
-
       <div className="field">
         <label htmlFor={`${uid}-name`}>Name on card</label>
         <input
