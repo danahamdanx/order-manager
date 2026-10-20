@@ -47,6 +47,7 @@ export interface Order {
   paymentStatus: PaymentStatus;
   cardBrand: string | null;
   cardLast4: string | null;
+  paymentFailure: string | null;
 }
 
 export interface Stats {
@@ -117,4 +118,16 @@ export interface Page<T> {
   total: number;
   page: number;
   pages: number;
+}
+
+export interface Payment {
+  id: number;
+  orderId: number;
+  amount: number;
+  status: 'requires_payment' | 'succeeded' | 'failed' | 'refunded';
+  failureReason: string | null;
+  cardBrand: string | null;
+  cardLast4: string | null;
+  createdAt: string;
+  clientSecret?: string;
 }

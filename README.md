@@ -49,6 +49,31 @@ A full-stack order management app. Customers sign up, browse products, place ord
 
 Customers register themselves. There is no public admin sign-up: the admin is seeded, and staff are created by an admin.
 
+## Payments
+
+Checkout uses a simulated payment gateway that behaves like a real one (Stripe-style):
+
+1. The API creates a payment (`requires_payment`) and returns a signed client secret.
+2. The browser sends the card **directly to the gateway**, never to the API.
+3. The gateway sends a **signed webhook** (HMAC, with a timestamp) with the result.
+4. The API verifies the signature and updates the payment and the order.
+5. The browser reads the final status from the API.
+
+Safety: idempotency keys, one open payment per order (partial unique index), row locks, duplicate webhooks ignored, amounts re-checked on confirmation. The gateway sits behind a `PaymentGateway` interface, so a real provider can replace the mock.
+
+Test cards (any future date, any code):
+
+| Card                | Result                  |
+| ------------------- | ----------------------- |
+| 4242 4242 4242 4242 | Approved                |
+| 5555 5555 5555 4444 | Approved (Mastercard)   |
+| 4000 0000 0000 0002 | Declined                |
+| 4000 0000 0000 9995 | Insufficient funds      |
+| 4000 0000 0000 0127 | Incorrect security code |
+| 4000 0000 0000 0119 | Processing error        |
+
+Any other number is rejected. Never enter a real card.
+
 ## Getting started
 
 Requirements: Node.js 20 or newer.
@@ -111,32 +136,35 @@ The integration tests cover authentication, role-based access, server-side prici
 
 ## API overview
 
-| Method | Endpoint                              | Access                                                 |
-| ------ | ------------------------------------- | ------------------------------------------------------ |
-| POST   | /api/auth/register                    | public (creates a customer)                            |
-| POST   | /api/auth/login                       | public                                                 |
-| GET    | /api/auth/me                          | signed in                                              |
-| POST   | /api/staff                            | admin                                                  |
-| GET    | /api/products, /api/products/:id      | public                                                 |
-| POST   | /api/orders                           | customer                                               |
-| GET    | /api/orders/mine                      | customer                                               |
-| POST   | /api/orders/:id/cancel                | customer (own pending orders)                          |
-| GET    | /api/orders/:id                       | owner, staff, admin                                    |
-| GET    | /api/orders                           | staff, admin (filters: status, search)                 |
-| PATCH  | /api/orders/:id/status                | staff, admin                                           |
-| DELETE | /api/orders/:id                       | admin                                                  |
-| GET    | /api/customers, /api/customers/:id    | staff, admin                                           |
-| GET    | /api/stats                            | staff, admin                                           |
-| GET    | /api/admin/products                   | staff, admin                                           |
-| POST   | /api/products                         | admin                                                  |
-| PATCH  | /api/products/:id                     | admin                                                  |
-| DELETE | /api/products/:id                     | admin (409 if the product is in orders)                |
-| GET    | /api/categories                       | public                                                 |
-| GET    | /api/products?category=&search=&sort= | public (sort: newest, price_asc, price_desc, name      |
-| GET    | /api/products/:id/image               | public                                                 |
-| PUT    | /api/products/:id/image               | admin (JPEG, PNG or WebP, max 1 MB)                    |
-| DELETE | /api/products/:id/image               | admin                                                  |
-| POST   | /api/orders/:id/pay                   | customer (temporary: records a simulated card payment) |
+| Method | Endpoint                              | Access                                                        |
+| ------ | ------------------------------------- | ------------------------------------------------------------- |
+| POST   | /api/auth/register                    | public (creates a customer)                                   |
+| POST   | /api/auth/login                       | public                                                        |
+| GET    | /api/auth/me                          | signed in                                                     |
+| POST   | /api/staff                            | admin                                                         |
+| GET    | /api/products, /api/products/:id      | public                                                        |
+| POST   | /api/orders                           | customer                                                      |
+| GET    | /api/orders/mine                      | customer                                                      |
+| POST   | /api/orders/:id/cancel                | customer (own pending orders)                                 |
+| GET    | /api/orders/:id                       | owner, staff, admin                                           |
+| GET    | /api/orders                           | staff, admin (filters: status, search)                        |
+| PATCH  | /api/orders/:id/status                | staff, admin                                                  |
+| DELETE | /api/orders/:id                       | admin                                                         |
+| GET    | /api/customers, /api/customers/:id    | staff, admin                                                  |
+| GET    | /api/stats                            | staff, admin                                                  |
+| GET    | /api/admin/products                   | staff, admin                                                  |
+| POST   | /api/products                         | admin                                                         |
+| PATCH  | /api/products/:id                     | admin                                                         |
+| DELETE | /api/products/:id                     | admin (409 if the product is in orders)                       |
+| GET    | /api/categories                       | public                                                        |
+| GET    | /api/products?category=&search=&sort= | public (sort: newest, price_asc, price_desc, name             |
+| GET    | /api/products/:id/image               | public                                                        |
+| PUT    | /api/products/:id/image               | admin (JPEG, PNG or WebP, max 1 MB)                           |
+| DELETE | /api/products/:id/image               | admin                                                         |
+| POST   | /api/payments                         | customer (needs an Idempotency-Key header)                    |
+| GET    | /api/payments/:id                     | owner, staff, admin                                           |
+| POST   | /api/webhooks/gateway                 | the gateway (HMAC signature required)                         |
+| POST   | /mock-gateway/v1/confirm              | the browser, with a client secret (simulated externalservice) |
 
 List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/products`) return `{ items, total, page, pages }` and accept `page` and `limit` (default 10, shop 12, max 50). Pages beyond the last one return the last page.
 

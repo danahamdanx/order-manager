@@ -109,18 +109,7 @@ export function parsePaging(query: Record<string, unknown>, defaultLimit = 10, m
   return { limit: Math.min(toInt(query.limit, defaultLimit), maxLimit), page: toInt(query.page, 1) };
 }
 
-export const CARD_BRANDS = ['visa', 'mastercard', 'amex', 'discover', 'other'] as const;
-
-// السيرفر ما بيستقبل رقم البطاقة كامل أبدًا: بس نوعها وآخر 4 أرقام
-export function parsePaymentInput(body: unknown): { data: { cardBrand: string; cardLast4: string }; errors: string[] } {
-  const b = (body ?? {}) as Record<string, unknown>;
-  const errors: string[] = [];
-
-  if (typeof b.cardBrand !== 'string' || !(CARD_BRANDS as readonly string[]).includes(b.cardBrand)) {
-    errors.push(`cardBrand must be one of: ${CARD_BRANDS.join(', ')}`);
-  }
-  if (typeof b.cardLast4 !== 'string' || !/^\d{4}$/.test(b.cardLast4)) {
-    errors.push('cardLast4 must be exactly 4 digits');
-  }
-  return { data: { cardBrand: String(b.cardBrand), cardLast4: String(b.cardLast4) }, errors };
+// مفتاح الـ idempotency بيجي من الـ header: حروف وأرقام و - و _ فقط
+export function parseIdempotencyKey(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(value) ? value : null;
 }

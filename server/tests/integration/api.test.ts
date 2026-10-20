@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pool } from '../../src/db';
 import app from '../../src/app';
+import { payOrder } from '../helpers';
 
 async function login(email: string, password: string) {
   const res = await request(app).post('/api/auth/login').send({ email, password });
@@ -104,11 +105,8 @@ describe('orders', () => {
 
   it('does not allow cancelling once processing has started', async () => {
     const created = await place([{ productId: 5, quantity: 1 }]);
-    const paid = await request(app)
-      .post(`/api/orders/${created.body.id}/pay`)
-      .set(auth(customer))
-      .send({ cardBrand: 'visa', cardLast4: '4242' });
-    expect(paid.status).toBe(200);
+    const paid = await payOrder(customer, created.body.id);
+    expect(paid.payment.status).toBe('succeeded');
     const patch = await request(app)
       .patch(`/api/orders/${created.body.id}/status`)
       .set(auth(admin))

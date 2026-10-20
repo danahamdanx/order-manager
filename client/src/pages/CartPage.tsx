@@ -6,15 +6,18 @@ import { SHIPPING } from '../cart/context';
 import { useCart } from '../cart/useCart';
 import { CardForm } from '../components/CardForm';
 import { ProductImage } from '../components/ProductImage';
-import { detectBrand, digitsOnly, emptyCard, validateCard } from '../lib/card';
-import type { CardErrors, CardFields } from '../lib/card';
 import { money } from '../lib/format';
 import type { Order } from '../types';
+import { emptyCard, validateCard } from '../lib/card';
+import type { CardErrors, CardFields } from '../lib/card';
+import { STEP_LABELS, outcomeNotice } from '../lib/payments';
+import { usePayment } from '../lib/usePayment';
 
 export default function CartPage() {
   const { lines, subtotal, setQuantity, remove, clear } = useCart();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { state: payState, pay } = usePayment();
   const [address, setAddress] = useState('');
   const [card, setCard] = useState<CardFields>(emptyCard);
   const [cardErrors, setCardErrors] = useState<CardErrors>({});
@@ -56,19 +59,20 @@ export default function CartPage() {
       return;
     }
 
+    // الطلب انعمل. السلة بتضل ظاهرة لحد ما نعرف نتيجة الدفع
+    const outcome = await pay(order.id, card);
     clear();
-    try {
-      const digits = digitsOnly(card.number);
-      // رقم البطاقة ما بيطلع من المتصفح: بنبعت بس النوع وآخر 4 أرقام
-      await api.post(`/orders/${order.id}/pay`, { cardBrand: detectBrand(digits), cardLast4: digits.slice(-4) });
+
+    if (outcome?.kind === 'succeeded') {
       navigate('/my-orders', { state: { highlight: order.id, notice: 'Payment received. Thank you for your order!' } });
-    } catch {
-      // الطلب انعمل بس الدفع ما تم: الزبون بيقدر يدفع من صفحة طلباتي
+    } else {
+      // الطلب محفوظ بدون دفع: بنفتح نافذة الدفع بصفحة طلباتي للمحاولة من جديد
       navigate('/my-orders', {
         state: {
           highlight: order.id,
+          openPay: true,
           noticeKind: 'error',
-          notice: 'Your order was created, but the payment did not go through. You can pay for it below.',
+          notice: `Your order #${order.id} is saved, but the payment did not go through. ${outcomeNotice(outcome)}`,
         },
       });
     }
@@ -121,7 +125,11 @@ export default function CartPage() {
 
             {error && <p className="alert-error" role="alert">{error}</p>}
             <button className="btn btn-primary btn-block" onClick={placeOrder} disabled={placing}>
-              {placing ? 'Processing…' : `Pay ${money(total)} and place order`}
+              {placing
+                ? payState.phase === 'working'
+                  ? STEP_LABELS[payState.step]
+                  : 'Creating your order…'
+                : `Pay ${money(total)} and place order`}
             </button>
           </>
         ) : user ? (
