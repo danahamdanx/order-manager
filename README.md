@@ -17,8 +17,10 @@ A full-stack order management app. Customers sign up, browse products, place ord
 - Order tracking with live status updates (polls every 15 seconds)
 - Cancel an order while it is still pending
 - Checkout with a simulated card payment: card details are validated in the browser and never sent to the server
+- Discount codes (percent or fixed amount, optional expiry and usage limit), managed by admins
+- Printable receipts for paid and refunded orders
 
-**Staff and admins**
+  **Staff and admins**
 
 - Dashboard with revenue, order counts and orders by status
 - Search and filter orders, update their status
@@ -165,6 +167,10 @@ The integration tests cover authentication, role-based access, server-side prici
 | GET    | /api/payments/:id                     | owner, staff, admin                                           |
 | POST   | /api/webhooks/gateway                 | the gateway (HMAC signature required)                         |
 | POST   | /mock-gateway/v1/confirm              | the browser, with a client secret (simulated externalservice) |
+| POST   | /api/orders/quote                     | customer (price preview with an optional discount code)       |
+| GET    | /api/admin/discounts                  | staff, admin                                                  |
+| POST   | /api/discounts                        | admin                                                         |
+| PATCH  | /api/discounts/:id                    | admin (enable, disable, change expiry or limit)               |
 
 List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/products`) return `{ items, total, page, pages }` and accept `page` and `limit` (default 10, shop 12, max 50). Pages beyond the last one return the last page.
 
@@ -178,6 +184,9 @@ List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/pr
 - **Customers cannot discover other people's orders:** requesting someone else's order returns 404, not 403.
 - **Images live in PostgreSQL.** The browser resizes photos to 900px before upload, the API checks the real file type from its first bytes (SVG is rejected), and responses are cached by version number. For a larger catalog, move them to object storage.
 - **Card numbers never reach the server.** The browser validates the card (Luhn check, expiry, security code) and sends only the brand and the last four digits. Orders have a separate payment status, and an order must be paid before it can move to processing, shipped or delivered. Revenue only counts paid orders.
+- **Pricing is server-side and exact.** Money is calculated in cents, the client never sends totals, and the database enforces `total = subtotal - discount + shipping`. A discount can never go below the subtotal, so shipping is always charged.
+- **Codes are consumed under a row lock**, so concurrent orders cannot exceed a usage limit. Cancelling an order gives its use back. Code type and value cannot change after creation, so order history stays meaningful.
+- **Quote vs. order:** the cart preview reports a bad code as a message, while placing an order with a bad code is rejected (422).
 
 ## Project structure
 

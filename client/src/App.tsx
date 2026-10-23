@@ -13,6 +13,8 @@ import CustomersPage from './pages/admin/CustomersPage';
 import DashboardPage from './pages/admin/DashboardPage';
 import OrdersPage from './pages/admin/OrdersPage';
 import ProductsPage from './pages/admin/ProductsPage';
+import ReceiptPage from './pages/ReceiptPage';
+import DiscountsPage from './pages/admin/DiscountsPage';
 
 export default function App() {
   return (
@@ -37,9 +39,12 @@ export default function App() {
           <Route path="products" element={<ProductsPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="customers/:id" element={<CustomerDetailPage />} />
+          <Route path="discounts" element={<DiscountsPage />} />
         </Route>
       </Route>
-
+      <Route element={<RequireRole roles={['customer', 'staff', 'admin']} />}>
+        <Route path="/receipt/:id" element={<ReceiptPage />} />
+      </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

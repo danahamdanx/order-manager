@@ -135,9 +135,11 @@ export async function processGatewayEvent(
     // نفس الرسالة وصلت مرتين، أو الدفعة انحسمت قبل: بنتجاهل
     if (payment.status !== 'requires_payment') return { received: true, note: 'already processed' };
 
-    const settle = (status: PaymentState, reason: string | null) =>
+       const settle = (status: PaymentState, reason: string | null) =>
       client.query(
-        `UPDATE payments SET status = $1, card_brand = $2, card_last4 = $3, failure_reason = $4, updated_at = now()
+        `UPDATE payments SET status = $1::text, card_brand = $2, card_last4 = $3, failure_reason = $4, updated_at = now(),
+           paid_at = CASE WHEN $1::text = 'succeeded' THEN now() ELSE paid_at END,
+           refunded_at = CASE WHEN $1::text = 'refunded' THEN now() ELSE refunded_at END
          WHERE id = $5`,
         [status, brand, last4, reason, payment.id],
       );

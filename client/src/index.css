@@ -1449,3 +1449,159 @@ select {
   border-radius: 10px;
   margin: 0 0 12px;
 }
+/* كود الخصم */
+.code-row {
+  display: flex;
+  gap: 8px;
+}
+
+.code-row input {
+  flex: 1;
+  text-transform: uppercase;
+}
+
+.field-ok {
+  display: block;
+  color: #27500a;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.sum-discount {
+  color: #27500a;
+}
+
+/* الإيصال */
+.receipt-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.receipt-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.receipt {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 32px;
+}
+
+.receipt-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.receipt-meta {
+  text-align: right;
+}
+
+.receipt-meta h1 {
+  font-size: 22px;
+  margin: 8px 0 2px;
+}
+
+.receipt-meta p {
+  margin: 0;
+}
+
+.receipt-parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.receipt-parties h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.receipt-parties p {
+  margin: 0;
+}
+
+.receipt table .num {
+  text-align: right;
+}
+
+.receipt-totals {
+  margin: 16px 0 0 auto;
+  max-width: 320px;
+}
+
+.receipt-foot {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 12px;
+}
+
+.receipt-foot p {
+  margin: 4px 0;
+}
+
+.stamp {
+  display: inline-block;
+  border: 3px solid;
+  border-radius: 10px;
+  padding: 2px 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  transform: rotate(-4deg);
+}
+
+.stamp-paid {
+  color: #27500a;
+  border-color: #27500a;
+}
+
+.stamp-refunded {
+  color: #3c3489;
+  border-color: #3c3489;
+}
+
+@media (max-width: 820px) {
+  .receipt {
+    padding: 20px;
+  }
+
+  .receipt-meta {
+    text-align: left;
+  }
+
+  .receipt-parties {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .receipt-page {
+    max-width: none;
+    padding: 0;
+  }
+
+  .receipt {
+    border: 0;
+    padding: 0;
+  }
+}
