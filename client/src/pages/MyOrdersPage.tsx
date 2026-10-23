@@ -156,6 +156,12 @@ export default function MyOrdersPage() {
                 <span>{money(i.unitPrice * i.quantity)}</span>
               </div>
             ))}
+                        {selected.discount > 0 && (
+              <div className="sum-row">
+                <span className="muted">Discount{selected.discountCode ? ` (${selected.discountCode})` : ''}</span>
+                <span>-{money(selected.discount)}</span>
+              </div>
+            )}
             <div className="sum-row"><span className="muted">Shipping</span><span>{money(selected.shipping)}</span></div>
             <div className="sum-row sum-total"><span>Total</span><span>{money(selected.total)}</span></div>
             <div className="sum-row">
@@ -183,6 +189,11 @@ export default function MyOrdersPage() {
               <button className="btn btn-ghost-dark" onClick={() => cancel(selected.id)} disabled={cancelling}>
                 {cancelling ? 'Cancelling…' : 'Cancel order'}
               </button>
+            )}
+            {(selected.paymentStatus === 'paid' || selected.paymentStatus === 'refunded') && (
+              <Link className="btn btn-secondary" to={`/receipt/${selected.id}`}>
+                Receipt
+              </Link>
             )}
           </div>
         </section>

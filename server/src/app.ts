@@ -10,7 +10,8 @@ import { isValidEmail, parseOrderItems, parsePaging, parseIdempotencyKey, parseP
 import { HttpError } from './errors.js';
 import { createMockGatewayRouter } from './gateway/mock.js';
 import { getPayment, paymentResponse, processGatewayEvent, startPayment } from './payments.js';
-
+import { evaluateDiscount, fromCents, normalizeCode, parseDiscountInput, parseDiscountUpdate, toCents } from './discounts.js';
+import type { DiscountRule } from './discounts.js';
 
 const SHIPPING = 5;
 
@@ -52,6 +53,11 @@ interface OrderRow {
   cardBrand: string | null;
   cardLast4: string | null;
   paymentFailure: string | null;
+  subtotal: number;
+  discount: number;
+  discountCode: string | null;
+  paidAt: Date | null;
+  refundedAt: Date | null;
   createdAt: Date;
 }
 interface OrderItemRow {
@@ -126,14 +132,18 @@ async function createUser(body: any, role: Role): Promise<UserRow> {
 
 const ORDER_SELECT = `
   SELECT o.id, o.user_id AS "userId", u.name AS "customerName", u.email AS "customerEmail",
-         o.status, o.payment_status AS "paymentStatus", o.total, o.shipping, o.address,
-         o.created_at AS "createdAt",
+         o.status, o.payment_status AS "paymentStatus", o.subtotal, o.discount,
+         o.discount_code AS "discountCode", o.total, o.shipping, o.address, o.created_at AS "createdAt",
          (SELECT pm.card_brand FROM payments pm WHERE pm.order_id = o.id AND pm.status IN ('succeeded', 'refunded')
            ORDER BY pm.id DESC LIMIT 1) AS "cardBrand",
          (SELECT pm.card_last4 FROM payments pm WHERE pm.order_id = o.id AND pm.status IN ('succeeded', 'refunded')
            ORDER BY pm.id DESC LIMIT 1) AS "cardLast4",
          (SELECT pm.failure_reason FROM payments pm WHERE pm.order_id = o.id AND pm.status = 'failed'
-           ORDER BY pm.id DESC LIMIT 1) AS "paymentFailure"
+           ORDER BY pm.id DESC LIMIT 1) AS "paymentFailure",
+         (SELECT pm.paid_at FROM payments pm WHERE pm.order_id = o.id AND pm.status IN ('succeeded', 'refunded')
+           ORDER BY pm.id DESC LIMIT 1) AS "paidAt",
+         (SELECT pm.refunded_at FROM payments pm WHERE pm.order_id = o.id AND pm.status = 'refunded'
+           ORDER BY pm.id DESC LIMIT 1) AS "refundedAt"
   FROM orders o JOIN users u ON u.id = o.user_id`;
 
 // بنجيب بنود كل الطلبات بـ query واحد (بدل query لكل طلب)
@@ -186,23 +196,31 @@ async function changeStatus(orderId: number, next: Status, onlyFrom?: Status) {
     if (PAID_REQUIRED.includes(next) && order.payment_status !== 'paid') {
       throw new HttpError(409, 'The order must be paid before it can be processed');
     }
+
     if (next === 'cancelled') {
-      // بنرجع المخزون
+      // 1) بنرجع المخزون
       await client.query(
         `UPDATE products p SET stock = p.stock + oi.quantity
          FROM order_items oi WHERE oi.order_id = $1 AND oi.product_id = p.id`,
         [orderId],
       );
-      // أي دفعة مفتوحة بتنسكّر (مش ممكن تنجح بعد الإلغاء)
+      // 2) الطلب الملغي ما بيحسب من استخدامات كود الخصم
+      await client.query(
+        `UPDATE discount_codes SET times_used = GREATEST(times_used - 1, 0)
+         WHERE id = (SELECT discount_code_id FROM orders WHERE id = $1)`,
+        [orderId],
+      );
+      // 3) أي دفعة مفتوحة بتنسكّر (مش ممكن تنجح بعد الإلغاء)
       await client.query(
         `UPDATE payments SET status = 'failed', failure_reason = 'order_cancelled', updated_at = now()
          WHERE order_id = $1 AND status = 'requires_payment'`,
         [orderId],
       );
-      // وإذا الطلب مدفوع، بنعتبر الدفعة مستردة
+      // 4) وإذا الطلب مدفوع، بنعتبر الدفعة مستردة وبنسجل الوقت
       if (order.payment_status === 'paid') {
         await client.query(
-          `UPDATE payments SET status = 'refunded', updated_at = now() WHERE order_id = $1 AND status = 'succeeded'`,
+          `UPDATE payments SET status = 'refunded', refunded_at = now(), updated_at = now()
+           WHERE order_id = $1 AND status = 'succeeded'`,
           [orderId],
         );
         await client.query(`UPDATE orders SET payment_status = 'refunded' WHERE id = $1`, [orderId]);
@@ -212,13 +230,76 @@ async function changeStatus(orderId: number, next: Status, onlyFrom?: Status) {
   });
 }
 
-async function placeOrder(userId: number, address: string, items: Map<number, number>): Promise<number> {
-  return withTransaction(async (client) => {
-    const lines: { id: number; name: string; price: number; qty: number }[] = [];
-    let subtotal = 0;
+interface CodeRow extends DiscountRule {
+  id: number;
+}
+const CODE_COLUMNS = `id, code, type, value, expires_at AS "expiresAt", usage_limit AS "usageLimit",
+  times_used AS "timesUsed", active`;
 
-    // FOR UPDATE بيقفل صف المنتج: طلبين لنفس آخر قطعة ما بيقدروا ينجحوا سوا
-    // والترتيب الثابت بيمنع deadlock بين طلبين متزامنين
+// null = ما في كود. '' = كود بصيغة غلط (بنعتبره غير صالح)
+function readCode(value: unknown): string | null {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return null;
+  return normalizeCode(value) ?? '';
+}
+
+function assertAvailable(p: ProductRow | undefined, productId: number, qty: number): asserts p is ProductRow {
+  if (!p) throw new HttpError(400, `Product ${productId} not found`);
+  if (!p.active) throw new HttpError(409, `${p.name} is no longer available`);
+  if (p.stock < qty) throw new HttpError(409, `Not enough stock for ${p.name}`);
+}
+
+// معاينة السعر للسلة: نفس الحسابات، بدون قفل وبدون ما نغيّر شي. الكود الغلط بيرجع رسالة مش خطأ
+async function quoteOrder(items: Map<number, number>, code: string | null) {
+  const rows = await query<ProductRow>('SELECT id, name, price, stock, active FROM products WHERE id = ANY($1::int[])', [
+    [...items.keys()],
+  ]);
+  const byId = new Map(rows.map((p) => [p.id, p]));
+
+  const lines = [...items.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([productId, quantity]) => {
+      const p = byId.get(productId);
+      assertAvailable(p, productId, quantity);
+      return { productId, name: p.name, unitPrice: p.price, quantity };
+    });
+  const subtotalCents = lines.reduce((sum, l) => sum + toCents(l.unitPrice) * l.quantity, 0);
+
+  let discountCents = 0;
+  let appliedCode: string | null = null;
+  let codeError: string | null = null;
+  if (code !== null) {
+    const rule = code ? await queryOne<CodeRow>(`SELECT ${CODE_COLUMNS} FROM discount_codes WHERE code = $1`, [code]) : undefined;
+    const check = evaluateDiscount(rule, subtotalCents);
+    if (check.ok) {
+      discountCents = check.discountCents;
+      appliedCode = rule!.code;
+    } else {
+      codeError = check.message;
+    }
+  }
+
+  const shippingCents = toCents(SHIPPING);
+  return {
+    items: lines,
+    subtotal: fromCents(subtotalCents),
+    discount: fromCents(discountCents),
+    shipping: fromCents(shippingCents),
+    total: fromCents(subtotalCents - discountCents + shippingCents),
+    code: appliedCode,
+    codeError,
+  };
+}
+
+async function placeOrder(
+  userId: number,
+  address: string,
+  items: Map<number, number>,
+  code: string | null,
+): Promise<number> {
+  return withTransaction(async (client) => {
+    const lines: { id: number; name: string; priceCents: number; qty: number }[] = [];
+
+    // FOR UPDATE بيقفل صف المنتج، والترتيب الثابت بيمنع deadlock بين طلبين متزامنين
     for (const productId of [...items.keys()].sort((a, b) => a - b)) {
       const qty = items.get(productId)!;
       const found = await client.query<ProductRow>(
@@ -226,26 +307,48 @@ async function placeOrder(userId: number, address: string, items: Map<number, nu
         [productId],
       );
       const p = found.rows[0];
-      if (!p) throw new HttpError(400, `Product ${productId} not found`);
-      if (!p.active) throw new HttpError(409, `${p.name} is no longer available`);
-      if (p.stock < qty) throw new HttpError(409, `Not enough stock for ${p.name}`);
-      subtotal += p.price * qty; // السعر من قاعدة البيانات، مش من الزبون
-      lines.push({ id: p.id, name: p.name, price: p.price, qty });
+      assertAvailable(p, productId, qty);
+      lines.push({ id: p.id, name: p.name, priceCents: toCents(p.price), qty });
+    }
+    const subtotalCents = lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
+
+    let discountCents = 0;
+    let applied: CodeRow | undefined;
+    if (code !== null) {
+      // قفل صف الكود: طلبين متزامنين ما بيقدروا ياخدوا آخر استخدام سوا
+      const res = await client.query<CodeRow>(`SELECT ${CODE_COLUMNS} FROM discount_codes WHERE code = $1 FOR UPDATE`, [code]);
+      const check = evaluateDiscount(res.rows[0], subtotalCents);
+      if (!check.ok) throw new HttpError(422, check.message, [check.reason]);
+      discountCents = check.discountCents;
+      applied = res.rows[0];
+      await client.query('UPDATE discount_codes SET times_used = times_used + 1 WHERE id = $1', [applied.id]);
     }
 
-    const total = Math.round((subtotal + SHIPPING) * 100) / 100;
+    const shippingCents = toCents(SHIPPING);
+    const totalCents = subtotalCents - discountCents + shippingCents;
     const created = await client.query<{ id: number }>(
-      'INSERT INTO orders (user_id, address, shipping, total) VALUES ($1, $2, $3, $4) RETURNING id',
-      [userId, address, SHIPPING, total],
+      `INSERT INTO orders (user_id, address, subtotal, discount, discount_code_id, discount_code, shipping, total)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [
+        userId,
+        address,
+        fromCents(subtotalCents),
+        fromCents(discountCents),
+        applied?.id ?? null,
+        applied?.code ?? null,
+        fromCents(shippingCents),
+        fromCents(totalCents),
+      ],
     );
     const orderId = created.rows[0].id;
 
+    const addItem = client.query.bind(client);
     for (const l of lines) {
-      await client.query(
+      await addItem(
         'INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity) VALUES ($1, $2, $3, $4, $5)',
-        [orderId, l.id, l.name, l.price, l.qty],
+        [orderId, l.id, l.name, fromCents(l.priceCents), l.qty],
       );
-      await client.query('UPDATE products SET stock = stock - $1 WHERE id = $2', [l.qty, l.id]);
+      await addItem('UPDATE products SET stock = stock - $1 WHERE id = $2', [l.qty, l.id]);
     }
     return orderId;
   });
@@ -504,6 +607,13 @@ app.delete('/api/products/:id', authenticate, authorizeRoles('admin'), async (re
 });
 
 // ---------- Orders: الزبون ----------
+// معاينة السعر مع الخصم (ما بتنشئ شي)
+app.post('/api/orders/quote', authenticate, authorizeRoles('customer'), async (req, res) => {
+  const { merged, error } = parseOrderItems(req.body?.items);
+  if (error) throw new HttpError(400, 'Validation failed', [error]);
+  res.json(await quoteOrder(merged, readCode(req.body?.code)));
+});
+
 app.post('/api/orders', authenticate, authorizeRoles('customer'), async (req, res) => {
   const { items, address } = req.body ?? {};
   const errors: string[] = [];
@@ -514,7 +624,8 @@ app.post('/api/orders', authenticate, authorizeRoles('customer'), async (req, re
   if (error) errors.push(error);
   if (errors.length) throw new HttpError(400, 'Validation failed', errors);
 
-  const orderId = await placeOrder(req.user!.user_id, address.trim(), merged);
+  // السعر والخصم والمجموع بنحسبهم هون. أي total أو discount بيجي من الزبون بنتجاهله
+  const orderId = await placeOrder(req.user!.user_id, address.trim(), merged, readCode(req.body?.code));
   res.status(201).json(await loadOrder(orderId));
 });
 
@@ -672,6 +783,64 @@ app.get('/api/stats', authenticate, authorizeRoles('admin', 'staff'), async (_re
     customers: customersRow?.customers ?? 0,
     byStatus,
   });
+});
+
+// ---------- Discount codes ----------
+// الحالة بتنحسب بالـ SQL (مصدر واحد للحقيقة)
+const DISCOUNT_SELECT = `
+  SELECT id, code, type, value, expires_at AS "expiresAt", usage_limit AS "usageLimit",
+         times_used AS "timesUsed", active, created_at AS "createdAt",
+         CASE WHEN NOT active THEN 'disabled'
+              WHEN expires_at IS NOT NULL AND expires_at <= now() THEN 'expired'
+              WHEN usage_limit IS NOT NULL AND times_used >= usage_limit THEN 'exhausted'
+              ELSE 'active' END AS status
+  FROM discount_codes`;
+
+app.get('/api/admin/discounts', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
+  res.json(
+    await queryPage(
+      'SELECT COUNT(*) AS total FROM discount_codes',
+      `${DISCOUNT_SELECT} ORDER BY id DESC`,
+      [],
+      parsePaging(req.query),
+    ),
+  );
+});
+
+app.post('/api/discounts', authenticate, authorizeRoles('admin'), async (req, res) => {
+  const { data, errors } = parseDiscountInput(req.body);
+  if (errors.length) throw new HttpError(400, 'Validation failed', errors);
+
+  try {
+    const created = await queryOne<{ id: number }>(
+      `INSERT INTO discount_codes (code, type, value, expires_at, usage_limit)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [data.code, data.type, data.value, data.expiresAt, data.usageLimit],
+    );
+    res.status(201).json(await queryOne(`${DISCOUNT_SELECT} WHERE id = $1`, [created!.id]));
+  } catch (err) {
+    if ((err as { code?: string }).code === '23505') throw new HttpError(409, 'This code already exists');
+    throw err;
+  }
+});
+
+app.patch('/api/discounts/:id', authenticate, authorizeRoles('admin'), async (req, res) => {
+  const id = idOf(req.params.id);
+  const { data, errors } = parseDiscountUpdate(req.body);
+  if (errors.length) throw new HttpError(400, 'Validation failed', errors);
+
+  // أسماء الأعمدة من قائمة ثابتة، والقيم parameters
+  const columns: Record<string, string> = { active: 'active', expiresAt: 'expires_at', usageLimit: 'usage_limit' };
+  const params: unknown[] = [];
+  const sets = Object.entries(data).map(([key, value]) => `${columns[key]} = ${bind(params, value)}`);
+  if (sets.length === 0) throw new HttpError(400, 'Validation failed', ['nothing to update']);
+
+  const updated = await queryOne(
+    `UPDATE discount_codes SET ${sets.join(', ')} WHERE id = ${bind(params, id)} RETURNING id`,
+    params,
+  );
+  if (!updated) throw new HttpError(404, 'Discount code not found');
+  res.json(await queryOne(`${DISCOUNT_SELECT} WHERE id = $1`, [id]));
 });
 
 // ---------- Error handler ----------

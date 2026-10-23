@@ -5,6 +5,7 @@ import { STATUSES } from '../types';
 import type { Order, Status } from '../types';
 import { ProductImage } from '../components/ProductImage';
 import { PaymentBadge } from './PaymentBadge';
+import { Link } from 'react-router-dom';
 
 
 interface Props {
@@ -75,6 +76,12 @@ export function OrderDialog({ order, canDelete, onClose, onUpdated, onDeleted }:
                 <span>{money(i.unitPrice * i.quantity)}</span>
               </div>
             ))}
+                {order.discount > 0 && (
+          <div className="sum-row">
+            <span className="muted">Discount{order.discountCode ? ` (${order.discountCode})` : ''}</span>
+            <span>-{money(order.discount)}</span>
+          </div>
+        )}    
         <div className="sum-row"><span className="muted">Shipping</span><span>{money(order.shipping)}</span></div>
         <div className="sum-row sum-total"><span>Total</span><span>{money(order.total)}</span></div>
       </div>
@@ -96,6 +103,9 @@ export function OrderDialog({ order, canDelete, onClose, onUpdated, onDeleted }:
         <span>
           {canDelete && (
             <button className="btn btn-danger" onClick={remove}>Delete</button>
+          )}
+          {(order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') && (
+            <Link to={`/receipt/${order.id}`} className="btn btn-secondary">View receipt</Link>
           )}
         </span>
         <span style={{ display: 'flex', gap: 8 }}>

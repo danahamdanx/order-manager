@@ -48,6 +48,11 @@ export interface Order {
   cardBrand: string | null;
   cardLast4: string | null;
   paymentFailure: string | null;
+  subtotal: number;
+  discount: number;
+  discountCode: string | null;
+  paidAt: string | null;
+  refundedAt: string | null;
 }
 
 export interface Stats {
@@ -130,4 +135,27 @@ export interface Payment {
   cardLast4: string | null;
   createdAt: string;
   clientSecret?: string;
+}
+
+export interface Quote {
+  items: { productId: number; name: string; unitPrice: number; quantity: number }[];
+  subtotal: number;
+  discount: number;
+  shipping: number;
+  total: number;
+  code: string | null;
+  codeError: string | null;
+}
+
+export interface DiscountCode {
+  id: number;
+  code: string;
+  type: 'percent' | 'amount';
+  value: number;
+  expiresAt: string | null;
+  usageLimit: number | null;
+  timesUsed: number;
+  active: boolean;
+  status: 'active' | 'disabled' | 'expired' | 'exhausted';
+  createdAt: string;
 }

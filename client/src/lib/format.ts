@@ -24,3 +24,6 @@ export const avatarColors = (id: number) => AVATARS[id % AVATARS.length];
 
 export const itemsSummary = (items: OrderItem[]) =>
   items.length === 0 ? '' : `${items[0].productName}${items.length > 1 ? ` +${items.length - 1} more` : ''}`;
+
+export const formatDateTime = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
