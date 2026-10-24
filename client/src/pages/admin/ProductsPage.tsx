@@ -125,6 +125,7 @@ export default function ProductsPage() {
                 <th>Category</th>
                 <th>Price</th>
                 <th>Stock</th>
+                <th>Views</th>
                 <th>Status</th>
                 {isAdmin && <th></th>}
               </tr>
@@ -148,6 +149,7 @@ export default function ProductsPage() {
                       <span className="badge badge-low">Low</span>
                     ) : null}
                   </td>
+                  <td>{p.views ?? 0}</td>
                   <td>
                     <span className={`badge ${p.active ? 'badge-ok' : 'badge-muted'}`}>
                       {p.active ? 'Active' : 'Archived'}

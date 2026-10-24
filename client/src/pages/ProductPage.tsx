@@ -5,6 +5,8 @@ import { useCart } from '../cart/useCart';
 import { money } from '../lib/format';
 import type { Product } from '../types';
 import { ProductImage } from '../components/ProductImage';
+import { useAuth } from '../auth/useAuth';
+import { useTrackView } from '../lib/useTrackView';
 
 export default function ProductPage() {
   const { id } = useParams();
@@ -13,6 +15,10 @@ export default function ProductPage() {
   const [error, setError] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
+
+  const { user } = useAuth();
+  // بنسجل المشاهدة بس بعد ما يتحمل المنتج فعلًا، وللزبائن بس
+  useTrackView(product?.id, user?.role === 'customer');
 
   useEffect(() => {
     const controller = new AbortController();
