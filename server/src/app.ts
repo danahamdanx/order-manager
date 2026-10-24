@@ -12,6 +12,7 @@ import { createMockGatewayRouter } from './gateway/mock.js';
 import { getPayment, paymentResponse, processGatewayEvent, startPayment } from './payments.js';
 import { evaluateDiscount, fromCents, normalizeCode, parseDiscountInput, parseDiscountUpdate, toCents } from './discounts.js';
 import type { DiscountRule } from './discounts.js';
+import { recordView } from './views.js';
 
 const SHIPPING = 5;
 
@@ -480,6 +481,21 @@ app.get('/api/products/:id/image', async (req, res) => {
   res.send(image.data);
 });
 
+// تسجيل مشاهدة منتج: للزبائن المسجلين بس. الـ staff والزوار ما بتنحسب مشاهداتهم
+app.post('/api/products/:id/view', authenticate, authorizeRoles('customer'), async (req, res) => {
+  const id = idOf(req.params.id);
+  const product = await queryOne<{ id: number }>('SELECT id FROM products WHERE id = $1 AND active = true', [id]);
+  if (!product) throw new HttpError(404, 'Product not found');
+
+  try {
+    res.json({ counted: await recordView(req.user!.user_id, id) });
+  } catch (err) {
+    // 23503: انحذف المنتج بين الفحص والكتابة
+    if ((err as { code?: string }).code === '23503') throw new HttpError(404, 'Product not found');
+    throw err;
+  }
+});
+
 // staff و admin. المؤرشفة بتظهر بس مع ?includeArchived=true
 app.get('/api/admin/products', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
   const { search, includeArchived } = req.query;
@@ -496,7 +512,8 @@ app.get('/api/admin/products', authenticate, authorizeRoles('admin', 'staff'), a
   res.json(
     await queryPage(
       `SELECT COUNT(*) AS total FROM products p JOIN categories c ON c.id = p.category_id ${whereSql}`,
-      `${PRODUCT_SELECT} ${whereSql} ORDER BY p.id DESC`,
+      `SELECT t.*, COALESCE((SELECT SUM(v.view_count) FROM product_views v WHERE v.product_id = t.id), 0) AS views
+       FROM (${PRODUCT_SELECT} ${whereSql}) t ORDER BY t.id DESC`,
       params,
       parsePaging(req.query),
     ),

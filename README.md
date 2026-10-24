@@ -19,6 +19,7 @@ A full-stack order management app. Customers sign up, browse products, place ord
 - Checkout with a simulated card payment: card details are validated in the browser and never sent to the server
 - Discount codes (percent or fixed amount, optional expiry and usage limit), managed by admins
 - Printable receipts for paid and refunded orders
+- Product view tracking for signed-in customers (one counted view per customer and product every 30 minutes), the first signal for recommendations
 
   **Staff and admins**
 
@@ -171,6 +172,7 @@ The integration tests cover authentication, role-based access, server-side prici
 | GET    | /api/admin/discounts                  | staff, admin                                                  |
 | POST   | /api/discounts                        | admin                                                         |
 | PATCH  | /api/discounts/:id                    | admin (enable, disable, change expiry or limit)               |
+| POST   | /api/products/:id/view                | customer (counted once per 30 minutes per product)            |
 
 List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/products`) return `{ items, total, page, pages }` and accept `page` and `limit` (default 10, shop 12, max 50). Pages beyond the last one return the last page.
 
@@ -187,6 +189,7 @@ List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/pr
 - **Pricing is server-side and exact.** Money is calculated in cents, the client never sends totals, and the database enforces `total = subtotal - discount + shipping`. A discount can never go below the subtotal, so shipping is always charged.
 - **Codes are consumed under a row lock**, so concurrent orders cannot exceed a usage limit. Cancelling an order gives its use back. Code type and value cannot change after creation, so order history stays meaningful.
 - **Quote vs. order:** the cart preview reports a bad code as a message, while placing an order with a bad code is rejected (422).
+- **View tracking is deduplicated on the server.** One row per customer and product keeps the table small, and a single atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE` counts at most one view per 30-minute visit, even for concurrent requests. The client adds a 2-second delay and a per-tab memory only to save requests. Tracking failures never affect the page. Views belong to the customer and are deleted with the account or the product, and no endpoint exposes them to other users.
 
 ## Project structure
 

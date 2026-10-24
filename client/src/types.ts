@@ -159,3 +159,8 @@ export interface DiscountCode {
   status: 'active' | 'disabled' | 'expired' | 'exhausted';
   createdAt: string;
 }
+
+export interface AdminProduct extends Product {
+  active: boolean;
+  views?: number;
+}
