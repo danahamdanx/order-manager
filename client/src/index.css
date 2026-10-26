@@ -1605,3 +1605,22 @@ select {
     padding: 0;
   }
 }
+
+/* التوصيات */
+.reco {
+  margin: 28px 0;
+}
+
+.reco h2 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+
+.reason {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--brand);
+}

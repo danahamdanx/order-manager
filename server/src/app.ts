@@ -3,7 +3,6 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool, query, queryOne, withTransaction, STATUSES } from './db.js';
-import { authenticate, authorizeRoles, JWT_SECRET } from './auth.js';
 import type { QueryResultRow } from 'pg';
 import type { PaymentStatus, Role, Status } from './db.js';
 import { isValidEmail, parseOrderItems, parsePaging, parseIdempotencyKey, parseProductInput, sniffImageType } from './validation.js';
@@ -13,6 +12,9 @@ import { getPayment, paymentResponse, processGatewayEvent, startPayment } from '
 import { evaluateDiscount, fromCents, normalizeCode, parseDiscountInput, parseDiscountUpdate, toCents } from './discounts.js';
 import type { DiscountRule } from './discounts.js';
 import { recordView } from './views.js';
+import { authenticate, authorizeRoles, JWT_SECRET, optionalAuth } from './auth.js';
+import { PRODUCT_SELECT } from './catalog.js';
+import { recommend } from './recommendations.js';
 
 const SHIPPING = 5;
 
@@ -392,12 +394,6 @@ app.post('/api/staff', authenticate, authorizeRoles('admin'), async (req, res) =
 });
 
 // ---------- Products ----------
-const PRODUCT_SELECT = `
-  SELECT p.id, p.name, p.description, c.name AS category, p.price, p.stock, p.icon, p.color, p.active,
-         p.created_at AS "createdAt",
-         (SELECT EXTRACT(EPOCH FROM i.updated_at)::bigint FROM product_images i
-           WHERE i.product_id = p.id) AS "imageVersion"
-  FROM products p JOIN categories c ON c.id = p.category_id`;
 
 // خيارات الترتيب من قائمة ثابتة، فما بيدخل أي نص من الطلب للـ SQL
 const SORTS: Record<string, string> = {
@@ -621,6 +617,28 @@ app.delete('/api/products/:id', authenticate, authorizeRoles('admin'), async (re
     throw err;
   }
   res.status(204).end();
+});
+
+// ---------- Recommendations ----------
+app.get('/api/recommendations', optionalAuth, async (req, res) => {
+  const limit = parsePaging({ limit: req.query.limit }, 8, 20).limit;
+
+  let contextProductId: number | null = null;
+  if (req.query.productId !== undefined) {
+    const raw = req.query.productId;
+    const n = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (!Number.isInteger(n) || n < 1 || n > 2147483647) {
+      throw new HttpError(400, 'Validation failed', ['productId must be a valid product id']);
+    }
+    contextProductId = n;
+  }
+
+  // الاقتراح المخصص للزبائن بس. الـ staff والزوار بياخدوا قائمة عامة
+  const userId = req.user?.role === 'customer' ? req.user.user_id : null;
+
+  // الرد بيختلف حسب المستخدم، فما بنسمح بتخزينه عند طرف ثالث
+  res.set('Cache-Control', 'private, no-cache');
+  res.json(await recommend({ userId, contextProductId, limit }));
 });
 
 // ---------- Orders: الزبون ----------

@@ -47,3 +47,17 @@ export const authorizeRoles = (...allowed: Role[]): RequestHandler => {
     next();
   };
 };
+
+// للـ routes العامة اللي بتتخصص للزبون المسجل: توكن صالح = مستخدم، وأي شي ثاني = زائر (بدون خطأ)
+export const optionalAuth: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    try {
+      const decoded = jwt.verify(header.split(' ')[1], JWT_SECRET) as jwt.JwtPayload;
+      if (decoded.user_id && decoded.role) req.user = { user_id: decoded.user_id, role: decoded.role };
+    } catch {
+      // توكن غلط أو منتهي: بنعامله كزائر
+    }
+  }
+  next();
+};

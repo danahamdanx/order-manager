@@ -20,6 +20,7 @@ A full-stack order management app. Customers sign up, browse products, place ord
 - Discount codes (percent or fixed amount, optional expiry and usage limit), managed by admins
 - Printable receipts for paid and refunded orders
 - Product view tracking for signed-in customers (one counted view per customer and product every 30 minutes), the first signal for recommendations
+- Personalized recommendations on the shop home, product pages and after checkou
 
   **Staff and admins**
 
@@ -76,6 +77,20 @@ Test cards (any future date, any code):
 | 4000 0000 0000 0119 | Processing error        |
 
 Any other number is rejected. Never enter a real card.
+
+## Recommendations
+
+`GET /api/recommendations` ranks products with a transparent, explainable score. Signals are normalized to 0..1 and combined:
+
+| Signal                                                                | Weight |
+| --------------------------------------------------------------------- | ------ |
+| Often bought together with the customer's past purchases              | 3      |
+| Categories of the customer's last 5 orders (recent orders count more) | 2      |
+| Categories the customer viewed in the last 30 days                    | 1.5    |
+| Same category as the product being viewed (product pages)             | 1      |
+| Best sellers of the last 90 days (also breaks ties)                   | 0.5    |
+
+Rules: out-of-stock, archived and already purchased products are never suggested; no more than 3 products per category; guests, new customers and staff get best sellers; every suggestion carries a reason shown in the UI. The scoring is a pure function (`server/src/ranking.ts`) with unit tests, and the SQL that collects the signals is covered by integration tests.
 
 ## Getting started
 
@@ -139,40 +154,41 @@ The integration tests cover authentication, role-based access, server-side prici
 
 ## API overview
 
-| Method | Endpoint                              | Access                                                        |
-| ------ | ------------------------------------- | ------------------------------------------------------------- |
-| POST   | /api/auth/register                    | public (creates a customer)                                   |
-| POST   | /api/auth/login                       | public                                                        |
-| GET    | /api/auth/me                          | signed in                                                     |
-| POST   | /api/staff                            | admin                                                         |
-| GET    | /api/products, /api/products/:id      | public                                                        |
-| POST   | /api/orders                           | customer                                                      |
-| GET    | /api/orders/mine                      | customer                                                      |
-| POST   | /api/orders/:id/cancel                | customer (own pending orders)                                 |
-| GET    | /api/orders/:id                       | owner, staff, admin                                           |
-| GET    | /api/orders                           | staff, admin (filters: status, search)                        |
-| PATCH  | /api/orders/:id/status                | staff, admin                                                  |
-| DELETE | /api/orders/:id                       | admin                                                         |
-| GET    | /api/customers, /api/customers/:id    | staff, admin                                                  |
-| GET    | /api/stats                            | staff, admin                                                  |
-| GET    | /api/admin/products                   | staff, admin                                                  |
-| POST   | /api/products                         | admin                                                         |
-| PATCH  | /api/products/:id                     | admin                                                         |
-| DELETE | /api/products/:id                     | admin (409 if the product is in orders)                       |
-| GET    | /api/categories                       | public                                                        |
-| GET    | /api/products?category=&search=&sort= | public (sort: newest, price_asc, price_desc, name             |
-| GET    | /api/products/:id/image               | public                                                        |
-| PUT    | /api/products/:id/image               | admin (JPEG, PNG or WebP, max 1 MB)                           |
-| DELETE | /api/products/:id/image               | admin                                                         |
-| POST   | /api/payments                         | customer (needs an Idempotency-Key header)                    |
-| GET    | /api/payments/:id                     | owner, staff, admin                                           |
-| POST   | /api/webhooks/gateway                 | the gateway (HMAC signature required)                         |
-| POST   | /mock-gateway/v1/confirm              | the browser, with a client secret (simulated externalservice) |
-| POST   | /api/orders/quote                     | customer (price preview with an optional discount code)       |
-| GET    | /api/admin/discounts                  | staff, admin                                                  |
-| POST   | /api/discounts                        | admin                                                         |
-| PATCH  | /api/discounts/:id                    | admin (enable, disable, change expiry or limit)               |
-| POST   | /api/products/:id/view                | customer (counted once per 30 minutes per product)            |
+| Method | Endpoint                               | Access                                                        |
+| ------ | -------------------------------------- | ------------------------------------------------------------- |
+| POST   | /api/auth/register                     | public (creates a customer)                                   |
+| POST   | /api/auth/login                        | public                                                        |
+| GET    | /api/auth/me                           | signed in                                                     |
+| POST   | /api/staff                             | admin                                                         |
+| GET    | /api/products, /api/products/:id       | public                                                        |
+| POST   | /api/orders                            | customer                                                      |
+| GET    | /api/orders/mine                       | customer                                                      |
+| POST   | /api/orders/:id/cancel                 | customer (own pending orders)                                 |
+| GET    | /api/orders/:id                        | owner, staff, admin                                           |
+| GET    | /api/orders                            | staff, admin (filters: status, search)                        |
+| PATCH  | /api/orders/:id/status                 | staff, admin                                                  |
+| DELETE | /api/orders/:id                        | admin                                                         |
+| GET    | /api/customers, /api/customers/:id     | staff, admin                                                  |
+| GET    | /api/stats                             | staff, admin                                                  |
+| GET    | /api/admin/products                    | staff, admin                                                  |
+| POST   | /api/products                          | admin                                                         |
+| PATCH  | /api/products/:id                      | admin                                                         |
+| DELETE | /api/products/:id                      | admin (409 if the product is in orders)                       |
+| GET    | /api/categories                        | public                                                        |
+| GET    | /api/products?category=&search=&sort=  | public (sort: newest, price_asc, price_desc, name             |
+| GET    | /api/products/:id/image                | public                                                        |
+| PUT    | /api/products/:id/image                | admin (JPEG, PNG or WebP, max 1 MB)                           |
+| DELETE | /api/products/:id/image                | admin                                                         |
+| POST   | /api/payments                          | customer (needs an Idempotency-Key header)                    |
+| GET    | /api/payments/:id                      | owner, staff, admin                                           |
+| POST   | /api/webhooks/gateway                  | the gateway (HMAC signature required)                         |
+| POST   | /mock-gateway/v1/confirm               | the browser, with a client secret (simulated externalservice) |
+| POST   | /api/orders/quote                      | customer (price preview with an optional discount code)       |
+| GET    | /api/admin/discounts                   | staff, admin                                                  |
+| POST   | /api/discounts                         | admin                                                         |
+| PATCH  | /api/discounts/:id                     | admin (enable, disable, change expiry or limit)               |
+| POST   | /api/products/:id/view                 | customer (counted once per 30 minutes per product)            |
+| GET    | /api/recommendations?limit=&productId= | public (personalized for signed-in customers)                 |
 
 List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/products`) return `{ items, total, page, pages }` and accept `page` and `limit` (default 10, shop 12, max 50). Pages beyond the last one return the last page.
 

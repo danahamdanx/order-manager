@@ -7,6 +7,7 @@ import type { Product } from '../types';
 import { ProductImage } from '../components/ProductImage';
 import { useAuth } from '../auth/useAuth';
 import { useTrackView } from '../lib/useTrackView';
+import { Recommendations } from '../components/Recommendations';
 
 export default function ProductPage() {
   const { id } = useParams();
@@ -92,6 +93,7 @@ export default function ProductPage() {
           )}
         </div>
       </div>
+      <Recommendations key={product.id} title="You might also like" productId={product.id} limit={4} />
     </>
   );
 }

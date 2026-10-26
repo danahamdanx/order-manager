@@ -11,6 +11,7 @@ import { formatDate, money } from '../lib/format';
 import type { Order } from '../types';
 import { useEffect, useRef, useState } from 'react';
 import { failureMessage } from '../lib/payments';
+import { Recommendations } from '../components/Recommendations';
 
 interface LocationState {
   highlight?: number;
@@ -198,7 +199,7 @@ export default function MyOrdersPage() {
           </div>
         </section>
       </div>
-
+      <Recommendations title="You might also like" genericTitle="Popular right now" limit={4} />
       {payOrder && <PayDialog key={payOrder.id} order={payOrder} onClose={() => setPayOrder(null)} onPaid={handlePaid} />}
     </>
   );
