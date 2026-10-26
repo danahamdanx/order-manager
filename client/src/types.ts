@@ -164,3 +164,12 @@ export interface AdminProduct extends Product {
   active: boolean;
   views?: number;
 }
+
+export interface Recommendation extends Product {
+  reason: { type: string; label: string };
+}
+
+export interface RecommendationsResponse {
+  items: Recommendation[];
+  personalized: boolean;
+}
