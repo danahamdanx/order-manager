@@ -14,7 +14,10 @@
     "db:reset": "tsx --env-file=.env db/run.ts reset",
     "start": "tsx src/index.ts",
     "db:migrate:prod": "tsx db/run.ts migrate",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "demo:seed": "tsx --env-file=.env db/demo/run.ts seed",
+    "demo:clear": "tsx --env-file=.env db/demo/run.ts clear",
+    "demo:export-images": "tsx --env-file=.env db/demo/run.ts export-images"
   },
   "keywords": [],
   "author": "",

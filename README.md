@@ -152,6 +152,19 @@ cd client && npm test
 
 The integration tests cover authentication, role-based access, server-side pricing, stock handling and cancellation rules.
 
+## Demo data
+
+Build a realistic dataset (20 products with photos, 25 customers, about 100 orders over 60 days with payments, refunds, discount codes and product views) with one command:
+
+```bash
+cd server
+npm run demo:seed -- --fresh        # local database
+DATABASE_URL='postgresql://...' npm run demo:seed -- --remote   # a hosted database
+npm run demo:clear                  # remove only the generated customers, orders and views
+```
+
+The data is generated with a seeded random generator, so it is identical on every run. Everything it creates is marked (`@demo.test` emails, `[demo]` addresses), so it can be removed safely. Demo customers get random passwords nobody knows. Existing products and photos are never overwritten. Product photos live in `server/db/demo-images` (see `CREDITS.md`).
+
 ## API overview
 
 | Method | Endpoint                               | Access                                                        |
