@@ -29,6 +29,9 @@ export default function AdminLayout() {
           <NavLink to="/admin/discounts">
             <i className="ti ti-ticket" aria-hidden="true" /> Discounts
           </NavLink>
+          <NavLink to="/admin/analytics">
+            <i className="ti ti-chart-line" aria-hidden="true" /> Analytics
+          </NavLink>
           <NavLink to="/shop">
             <i className="ti ti-building-store" aria-hidden="true" /> View shop
           </NavLink>

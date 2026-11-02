@@ -173,3 +173,27 @@ export interface RecommendationsResponse {
   items: Recommendation[];
   personalized: boolean;
 }
+export interface SalesPoint {
+  date: string;
+  orders: number;
+  paidOrders: number;
+  revenue: number;
+  aov: number | null;
+  newCustomers: number;
+}
+
+export interface SalesTotals {
+  revenue: number;
+  orders: number;
+  paidOrders: number;
+  aov: number | null;
+  newCustomers: number;
+}
+
+export interface SalesReport {
+  range: { from: string; to: string; granularity: 'day' | 'week'; tz: string; days: number };
+  series: SalesPoint[];
+  totals: SalesTotals;
+  previous: { from: string; to: string; totals: SalesTotals };
+  changes: { revenue: number | null; orders: number | null; aov: number | null; newCustomers: number | null };
+}
