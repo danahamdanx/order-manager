@@ -15,6 +15,8 @@ import { recordView } from './views.js';
 import { authenticate, authorizeRoles, JWT_SECRET, optionalAuth } from './auth.js';
 import { PRODUCT_SELECT } from './catalog.js';
 import { recommend } from './recommendations.js';
+import { salesReport } from './salesReport.js';
+
 
 const SHIPPING = 5;
 
@@ -818,6 +820,12 @@ app.get('/api/stats', authenticate, authorizeRoles('admin', 'staff'), async (_re
     customers: customersRow?.customers ?? 0,
     byStatus,
   });
+});
+
+// ---------- Analytics (staff / admin) ----------
+app.get('/api/analytics/sales', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
+  res.set('Cache-Control', 'private, no-cache');
+  res.json(await salesReport(req.query));
 });
 
 // ---------- Discount codes ----------

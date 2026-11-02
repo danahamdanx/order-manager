@@ -15,6 +15,9 @@ import OrdersPage from './pages/admin/OrdersPage';
 import ProductsPage from './pages/admin/ProductsPage';
 import ReceiptPage from './pages/ReceiptPage';
 import DiscountsPage from './pages/admin/DiscountsPage';
+import { Suspense, lazy } from 'react';
+
+const AnalyticsPage = lazy(() => import('./pages/admin/AnalyticsPage'));
 
 export default function App() {
   return (
@@ -40,6 +43,11 @@ export default function App() {
           <Route path="customers" element={<CustomersPage />} />
           <Route path="customers/:id" element={<CustomerDetailPage />} />
           <Route path="discounts" element={<DiscountsPage />} />
+          <Route path="analytics" element={<Suspense fallback={<p className="muted">Loading…</p>}>
+                <AnalyticsPage />
+              </Suspense>
+            }
+          />
         </Route>
       </Route>
       <Route element={<RequireRole roles={['customer', 'staff', 'admin']} />}>
