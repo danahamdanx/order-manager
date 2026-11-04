@@ -8,6 +8,8 @@ import {
   resolveRange,
   shiftDays,
   validateRange,
+  exportFilename,
+  parseThresholdInput
 } from './analytics';
 
 const today = '2026-10-26';
@@ -83,3 +85,16 @@ describe('formatting', () => {
     expect(formatMoneyShort(12000)).toBe('$12k');
   });
 });
+describe('export helpers', () => {
+  it('builds file names', () => {
+    expect(exportFilename('orders', '2026-10-01', '2026-10-26')).toBe('orders_2026-10-01_to_2026-10-26.csv');
+    expect(exportFilename('customers', '2026-10-01', '2026-10-26')).toBe('customers_2026-10-26.csv');
+  });
+
+  it('reads the stock threshold', () => {
+    expect(parseThresholdInput('5')).toBe(5);
+    expect(parseThresholdInput(' 0 ')).toBe(0);
+    expect(parseThresholdInput('1000')).toBe(1000);
+    for (const bad of ['', '-1', '1001', '2.5', 'abc']) expect(parseThresholdInput(bad), bad).toBeNull();
+  });
+}); 
