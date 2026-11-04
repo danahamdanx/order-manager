@@ -10,7 +10,7 @@ import { usePagedFetch } from '../../lib/usePagedFetch';
 import { useUrlParams } from '../../lib/useUrlParams';
 import type { AdminProduct, Category } from '../../types';
 
-const DEFAULTS = { q: '', archived: '', page: '1' };
+const DEFAULTS = { q: '', archived: '', page: '1', edit: '' };
 const PAGE_SIZE = 10;
 
 export default function ProductsPage() {
@@ -41,6 +41,24 @@ export default function ProductsPage() {
       });
   }, []);
 
+    // رابط التعديل المباشر (من تنبيه المخزون المنخفض): /admin/products?edit=ID
+  useEffect(() => {
+    const id = Number(values.edit);
+    if (!isAdmin || !Number.isInteger(id) || id < 1) return;
+    let active = true;
+    api
+      .get<AdminProduct>(`/admin/products/${id}`)
+      .then((product) => {
+        if (active) setDialog({ product });
+      })
+      .catch((err: Error) => {
+        if (active) setActionError(err.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [values.edit, isAdmin]);
+
   function flash(message: string) {
     setNotice(message);
     setTimeout(() => setNotice(null), 3000);
@@ -69,8 +87,13 @@ export default function ProductsPage() {
     }
   }
 
-  function handleSaved(saved: AdminProduct, isNew: boolean, imageError?: string) {
+  function closeDialog() {
     setDialog(null);
+    if (values.edit) update({ edit: '', page: values.page });
+  }
+
+  function handleSaved(saved: AdminProduct, isNew: boolean, imageError?: string) {
+    closeDialog();
     reload();
     if (imageError) {
       setActionError(`${saved.name} was saved, but the image could not be uploaded: ${imageError}`);
@@ -190,7 +213,7 @@ export default function ProductsPage() {
           key={dialog.product?.id ?? 'new'}
           product={dialog.product}
           categories={categories}
-          onClose={() => setDialog(null)}
+          onClose={closeDialog}
           onSaved={handleSaved}
         />
       )}

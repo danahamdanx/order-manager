@@ -74,3 +74,12 @@ export function formatMoneyShort(n: number) {
   if (n >= 1_000) return `$${(n / 1000).toFixed(1)}k`;
   return `$${Math.round(n)}`;
 }
+
+export const exportFilename = (kind: 'orders' | 'customers', from: string, to: string) =>
+  kind === 'orders' ? `orders_${from}_to_${to}.csv` : `customers_${to}.csv`;
+
+// حد المخزون: رقم صحيح من 0 لـ 1000، وإلا null
+export function parseThresholdInput(text: string): number | null {
+  const value = text.trim();
+  return /^\d{1,4}$/.test(value) && Number(value) <= 1000 ? Number(value) : null;
+}

@@ -16,13 +16,16 @@ import { authenticate, authorizeRoles, JWT_SECRET, optionalAuth } from './auth.j
 import { PRODUCT_SELECT } from './catalog.js';
 import { recommend } from './recommendations.js';
 import { salesReport } from './salesReport.js';
+import { insightsReport } from './insights.js';
+import { customersCsv, ordersCsv } from './exports.js';
+import type { CsvFile } from './exports.js';
 
 
 const SHIPPING = 5;
 
 const app = express();
 const allowedOrigins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((o) => o.trim());
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors({ origin: allowedOrigins, exposedHeaders: ['Content-Disposition', 'X-Export-Truncated'] }));
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -518,6 +521,17 @@ app.get('/api/admin/products', authenticate, authorizeRoles('admin', 'staff'), a
   );
 });
 
+app.get('/api/admin/products/:id', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
+  const product = await queryOne(
+    `SELECT t.*, COALESCE((SELECT SUM(v.view_count) FROM product_views v WHERE v.product_id = t.id), 0) AS views
+     FROM (${PRODUCT_SELECT} WHERE p.id = $1) t`,
+    [idOf(req.params.id)],
+  );
+  if (!product) throw new HttpError(404, 'Product not found');
+  res.json(product);
+});
+
+
 app.post('/api/products', authenticate, authorizeRoles('admin'), async (req, res) => {
   const { data, errors } = parseProductInput(req.body, true);
   if (errors.length) throw new HttpError(400, 'Validation failed', errors);
@@ -827,6 +841,31 @@ app.get('/api/analytics/sales', authenticate, authorizeRoles('admin', 'staff'), 
   res.set('Cache-Control', 'private, no-cache');
   res.json(await salesReport(req.query));
 });
+
+app.get('/api/analytics/insights', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
+  res.set('Cache-Control', 'private, no-cache');
+  res.json(await insightsReport(req.query));
+});
+
+// BOM عشان Excel يقرأ UTF-8 صح (الأسماء العربية)
+function sendCsv(res: express.Response, file: CsvFile) {
+  res.set({
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${file.filename}"`,
+    'Cache-Control': 'no-store', // الملف فيه بيانات شخصية
+    'X-Export-Truncated': String(file.truncated),
+  });
+  res.send(`\uFEFF${file.csv}`);
+}
+
+app.get('/api/export/orders.csv', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
+  sendCsv(res, await ordersCsv(req.query));
+});
+
+app.get('/api/export/customers.csv', authenticate, authorizeRoles('admin', 'staff'), async (req, res) => {
+  sendCsv(res, await customersCsv(req.query));
+});
+
 
 // ---------- Discount codes ----------
 // الحالة بتنحسب بالـ SQL (مصدر واحد للحقيقة)

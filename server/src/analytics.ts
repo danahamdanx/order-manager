@@ -110,3 +110,10 @@ export function pctChange(current: number | null, previous: number | null): numb
   if (current === null || previous === null || previous === 0) return null;
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
+
+// حد المخزون المنخفض: رقم صحيح من 0 لـ 1000. بدون قيمة بنرجع الافتراضي، ومع قيمة غلط بنرجع null
+export function parseThreshold(value: unknown, fallback = 5): number | null {
+  if (value === undefined || value === '') return fallback;
+  const n = typeof value === 'string' && /^\d{1,4}$/.test(value) ? Number(value) : NaN;
+  return Number.isInteger(n) && n >= 0 && n <= 1000 ? n : null;
+}

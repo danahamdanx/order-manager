@@ -197,3 +197,35 @@ export interface SalesReport {
   previous: { from: string; to: string; totals: SalesTotals };
   changes: { revenue: number | null; orders: number | null; aov: number | null; newCustomers: number | null };
 }
+
+export interface TopProduct {
+  id: number;
+  name: string;
+  category: string;
+  units: number;
+  revenue: number;
+}
+
+export interface TopCustomer {
+  id: number;
+  name: string;
+  email: string;
+  orders: number;
+  spent: number;
+  lastOrderAt: string;
+}
+
+export interface LowStockItem {
+  id: number;
+  name: string;
+  category: string;
+  stock: number;
+  sold30: number;
+}
+
+export interface InsightsReport {
+  range: SalesReport['range'];
+  topProducts: { byUnits: TopProduct[]; byRevenue: TopProduct[] };
+  topCustomers: TopCustomer[];
+  lowStock: { threshold: number; items: LowStockItem[] };
+}

@@ -32,6 +32,8 @@ A full-stack order management app. Customers sign up, browse products, place ord
 - Product photos (uploaded from the admin panel),categories, and sorting in the shop
 - Paginated lists with filters and page numbers kept in the URL
 - Analytics page: revenue, orders, average order value and new customers over time, compared with the previous period.
+- Insights: top products (by units or revenue), top customers, low-stock alerts with a threshold and a direct restock link
+- CSV export of orders (by date range and status) and customers, safe to open in Excel and Google Sheets
 
 ## Tech stack
 
@@ -168,42 +170,46 @@ The data is generated with a seeded random generator, so it is identical on ever
 
 ## API overview
 
-| Method | Endpoint                                        | Access                                                        |
-| ------ | ----------------------------------------------- | ------------------------------------------------------------- |
-| POST   | /api/auth/register                              | public (creates a customer)                                   |
-| POST   | /api/auth/login                                 | public                                                        |
-| GET    | /api/auth/me                                    | signed in                                                     |
-| POST   | /api/staff                                      | admin                                                         |
-| GET    | /api/products, /api/products/:id                | public                                                        |
-| POST   | /api/orders                                     | customer                                                      |
-| GET    | /api/orders/mine                                | customer                                                      |
-| POST   | /api/orders/:id/cancel                          | customer (own pending orders)                                 |
-| GET    | /api/orders/:id                                 | owner, staff, admin                                           |
-| GET    | /api/orders                                     | staff, admin (filters: status, search)                        |
-| PATCH  | /api/orders/:id/status                          | staff, admin                                                  |
-| DELETE | /api/orders/:id                                 | admin                                                         |
-| GET    | /api/customers, /api/customers/:id              | staff, admin                                                  |
-| GET    | /api/stats                                      | staff, admin                                                  |
-| GET    | /api/admin/products                             | staff, admin                                                  |
-| POST   | /api/products                                   | admin                                                         |
-| PATCH  | /api/products/:id                               | admin                                                         |
-| DELETE | /api/products/:id                               | admin (409 if the product is in orders)                       |
-| GET    | /api/categories                                 | public                                                        |
-| GET    | /api/products?category=&search=&sort=           | public (sort: newest, price_asc, price_desc, name             |
-| GET    | /api/products/:id/image                         | public                                                        |
-| PUT    | /api/products/:id/image                         | admin (JPEG, PNG or WebP, max 1 MB)                           |
-| DELETE | /api/products/:id/image                         | admin                                                         |
-| POST   | /api/payments                                   | customer (needs an Idempotency-Key header)                    |
-| GET    | /api/payments/:id                               | owner, staff, admin                                           |
-| POST   | /api/webhooks/gateway                           | the gateway (HMAC signature required)                         |
-| POST   | /mock-gateway/v1/confirm                        | the browser, with a client secret (simulated externalservice) |
-| POST   | /api/orders/quote                               | customer (price preview with an optional discount code)       |
-| GET    | /api/admin/discounts                            | staff, admin                                                  |
-| POST   | /api/discounts                                  | admin                                                         |
-| PATCH  | /api/discounts/:id                              | admin (enable, disable, change expiry or limit)               |
-| POST   | /api/products/:id/view                          | customer (counted once per 30 minutes per product)            |
-| GET    | /api/recommendations?limit=&productId=          | public (personalized for signed-in customers)                 |
-| GET    | /api/analytics/sales?from=&to=&granularity=&tz= | staff, admin                                                  |
+| Method | Endpoint                                                | Access                                                        |
+| ------ | ------------------------------------------------------- | ------------------------------------------------------------- |
+| POST   | /api/auth/register                                      | public (creates a customer)                                   |
+| POST   | /api/auth/login                                         | public                                                        |
+| GET    | /api/auth/me                                            | signed in                                                     |
+| POST   | /api/staff                                              | admin                                                         |
+| GET    | /api/products, /api/products/:id                        | public                                                        |
+| POST   | /api/orders                                             | customer                                                      |
+| GET    | /api/orders/mine                                        | customer                                                      |
+| POST   | /api/orders/:id/cancel                                  | customer (own pending orders)                                 |
+| GET    | /api/orders/:id                                         | owner, staff, admin                                           |
+| GET    | /api/orders                                             | staff, admin (filters: status, search)                        |
+| PATCH  | /api/orders/:id/status                                  | staff, admin                                                  |
+| DELETE | /api/orders/:id                                         | admin                                                         |
+| GET    | /api/customers, /api/customers/:id                      | staff, admin                                                  |
+| GET    | /api/stats                                              | staff, admin                                                  |
+| GET    | /api/admin/products                                     | staff, admin                                                  |
+| POST   | /api/products                                           | admin                                                         |
+| PATCH  | /api/products/:id                                       | admin                                                         |
+| DELETE | /api/products/:id                                       | admin (409 if the product is in orders)                       |
+| GET    | /api/categories                                         | public                                                        |
+| GET    | /api/products?category=&search=&sort=                   | public (sort: newest, price_asc, price_desc, name             |
+| GET    | /api/products/:id/image                                 | public                                                        |
+| PUT    | /api/products/:id/image                                 | admin (JPEG, PNG or WebP, max 1 MB)                           |
+| DELETE | /api/products/:id/image                                 | admin                                                         |
+| POST   | /api/payments                                           | customer (needs an Idempotency-Key header)                    |
+| GET    | /api/payments/:id                                       | owner, staff, admin                                           |
+| POST   | /api/webhooks/gateway                                   | the gateway (HMAC signature required)                         |
+| POST   | /mock-gateway/v1/confirm                                | the browser, with a client secret (simulated externalservice) |
+| POST   | /api/orders/quote                                       | customer (price preview with an optional discount code)       |
+| GET    | /api/admin/discounts                                    | staff, admin                                                  |
+| POST   | /api/discounts                                          | admin                                                         |
+| PATCH  | /api/discounts/:id                                      | admin (enable, disable, change expiry or limit)               |
+| POST   | /api/products/:id/view                                  | customer (counted once per 30 minutes per product)            |
+| GET    | /api/recommendations?limit=&productId=                  | public (personalized for signed-in customers)                 |
+| GET    | /api/analytics/sales?from=&to=&granularity=&tz=         | staff, admin                                                  |
+| GET    | /api/analytics/insights?from=&to=&tz=&limit=&threshold= | staff, admin                                                  |
+| GET    | /api/export/orders.csv?from=&to=&tz=&status=            | staff, admin                                                  |
+| GET    | /api/export/customers.csv?tz=                           | staff, admin                                                  |
+| GET    | /api/admin/products/:id                                 | staff, admin                                                  |
 
 List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/products`) return `{ items, total, page, pages }` and accept `page` and `limit` (default 10, shop 12, max 50). Pages beyond the last one return the last page.
 
@@ -222,6 +228,8 @@ List endpoints (`/api/orders`, `/api/customers`, `/api/products`, `/api/admin/pr
 - **Quote vs. order:** the cart preview reports a bad code as a message, while placing an order with a bad code is rejected (422).
 - **View tracking is deduplicated on the server.** One row per customer and product keeps the table small, and a single atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE` counts at most one view per 30-minute visit, even for concurrent requests. The client adds a 2-second delay and a per-tab memory only to save requests. Tracking failures never affect the page. Views belong to the customer and are deleted with the account or the product, and no endpoint exposes them to other users.
 - **Analytics definitions are explicit.** Revenue counts paid orders only (cancelled, refunded and unpaid orders are excluded); orders exclude cancelled ones; the average order value is revenue divided by paid orders; days follow the viewer's time zone. Empty days are returned as zeros so charts stay continuous, and every figure is compared with the previous period of the same length.
+- **CSV files are built to open correctly in spreadsheets:** UTF-8 with a BOM, CRLF line endings, RFC 4180 quoting, dates in the requester's time zone, and fixed two-decimal money. Text cells that start with `=`, `+`, `-`, `@` or a tab are prefixed with an apostrophe so a malicious customer name cannot run as a formula (CSV injection). Exports are capped at 50,000 rows, send `Cache-Control: no-store`, and are limited to staff and admins because they contain personal data.
+- **Top lists use the same rules as revenue:** only paid orders count, product revenue is the item price times quantity before order discounts and shipping, and low stock looks at current inventory regardless of the date range.
 
 ## Project structure
 

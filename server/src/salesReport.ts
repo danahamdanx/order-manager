@@ -1,5 +1,5 @@
 import { averageOrderValue, isTzName, parseRange, pctChange, previousRange, summarize } from './analytics.js';
-import type { SalesPoint } from './analytics.js';
+import type { SalesPoint, SalesRange } from './analytics.js';
 import { query, queryOne } from './db.js';
 import { HttpError } from './errors.js';
 
@@ -39,24 +39,37 @@ async function loadSeries(from: string, to: string, unit: 'day' | 'week', tz: st
   return rows.map((r) => ({ ...r, aov: averageOrderValue(r.revenue, r.paidOrders) }));
 }
 
-export async function salesReport(raw: Record<string, unknown>) {
-  // "اليوم" بتوقيت المستخدم. وإذا اسم التوقيت غلط، PostgreSQL بيرفضه (22023) وبنرجع 400
-  const tzForToday = isTzName(raw.tz) ? raw.tz : 'UTC';
-  let today: string;
+// "اليوم" بتوقيت المستخدم. وإذا اسم التوقيت غلط، PostgreSQL بيرفضه (22023) وبنرجع 400
+export async function localToday(tz: string): Promise<string> {
   try {
-    const row = await queryOne<{ today: string }>(`SELECT (now() AT TIME ZONE $1::text)::date::text AS today`, [tzForToday]);
-    today = row!.today;
+    const row = await queryOne<{ today: string }>(`SELECT (now() AT TIME ZONE $1::text)::date::text AS today`, [tz]);
+    return row!.today;
   } catch (err) {
     if ((err as { code?: string }).code === '22023') {
       throw new HttpError(400, 'Validation failed', ['tz must be a valid time zone name']);
     }
     throw err;
   }
+}
 
-  const parsed = parseRange(raw, today);
+export async function resolveTz(raw: Record<string, unknown>): Promise<string> {
+  const tz = raw.tz === undefined ? 'UTC' : raw.tz;
+  if (!isTzName(tz)) throw new HttpError(400, 'Validation failed', ['tz must be a valid time zone name']);
+  await localToday(tz);
+  return tz;
+}
+
+// الفترة من الـ query (نفس القواعد بكل التقارير). ignoreGranularity: التقارير اللي ما بتجمّع بالزمن
+export async function resolveRange(raw: Record<string, unknown>, ignoreGranularity = false): Promise<SalesRange> {
+  const input = ignoreGranularity ? { ...raw, granularity: undefined } : raw;
+  const today = await localToday(isTzName(raw.tz) ? raw.tz : 'UTC');
+  const parsed = parseRange(input, today);
   if (!parsed.range) throw new HttpError(400, 'Validation failed', [parsed.error ?? 'invalid range']);
-  const range = parsed.range;
+  return parsed.range;
+}
 
+export async function salesReport(raw: Record<string, unknown>) {
+  const range = await resolveRange(raw);
   const previous = previousRange(range.from, range.to);
   const [series, previousSeries] = await Promise.all([
     loadSeries(range.from, range.to, range.granularity, range.tz),

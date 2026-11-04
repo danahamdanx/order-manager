@@ -1,7 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { ExportCard, LowStockCard, TopCustomersCard, TopProductsCard } from '../../components/InsightsPanels';
 import { MetricChart } from '../../components/MetricChart';
-import { PRESETS, autoGranularity, daysInRange, formatPeriod, formatMoneyShort, localISO, resolveRange, validateRange } from '../../lib/analytics';
+import {
+  PRESETS,
+  formatMoneyShort,
+  formatPeriod,
+  localISO,
+  parseThresholdInput,
+  resolveRange,
+  validateRange,
+} from '../../lib/analytics';
 import { formatDate, money } from '../../lib/format';
+import { useDebounce } from '../../lib/useDebounce';
+import { useInsights } from '../../lib/useInsights';
 import { useSalesReport } from '../../lib/useSalesReport';
 import { useUrlParams } from '../../lib/useUrlParams';
 import type { SalesReport } from '../../types';
@@ -65,11 +76,18 @@ export default function AnalyticsPage() {
 
   const { from, to, granularity } = resolveRange(values, today);
   const problem = validateRange(from, to, today, granularity);
-  const days = problem ? 0 : daysInRange(from, to);
-  const effective = granularity ?? autoGranularity(days);
 
-  const { data, loading, error } = useSalesReport({ from, to, granularity, tz, enabled: problem === null });
+  // حد المخزون: تفضيل محلي (مش بالرابط)، بنستنى المستخدم يخلص كتابة
+  const [stockText, setStockText] = useState('5');
+  const debouncedStock = useDebounce(stockText, 300);
+  const threshold = parseThresholdInput(debouncedStock);
+
+  const sales = useSalesReport({ from, to, granularity, tz, enabled: problem === null });
+  const insights = useInsights({ from, to, tz, threshold: threshold ?? 5, enabled: problem === null });
+
+  const data = sales.data;
   const empty = data && data.totals.orders === 0 && data.totals.revenue === 0 && data.totals.newCustomers === 0;
+  const previous = data ? formatPeriod(data.previous.from, data.previous.to) : '';
 
   return (
     <>
@@ -118,21 +136,20 @@ export default function AnalyticsPage() {
       </div>
 
       {problem && <p className="alert-error" role="alert">{problem}</p>}
-      {error && <p className="alert-error" role="alert">{error}</p>}
-      {!problem && !data && loading && <p className="muted">Loading analytics…</p>}
+      {sales.error && <p className="alert-error" role="alert">{sales.error}</p>}
+      {!problem && !data && sales.loading && <p className="muted">Loading analytics…</p>}
 
       {!problem && data && (
-        <div className={loading ? 'is-loading' : ''} aria-busy={loading}>
+        <div className={sales.loading ? 'is-loading' : ''} aria-busy={sales.loading}>
           <p className="muted">
-            {formatPeriod(data.range.from, data.range.to)} · {data.range.granularity === 'week' ? 'weekly' : 'daily'} · {effective === data.range.granularity ? '' : ''}
-            time zone {data.range.tz}
+            {formatPeriod(data.range.from, data.range.to)} · {data.range.granularity === 'week' ? 'weekly' : 'daily'} · time zone {data.range.tz}
           </p>
 
           <div className="kpis">
-            <Kpi label="Revenue" value={money(data.totals.revenue)} change={data.changes.revenue} previous={formatPeriod(data.previous.from, data.previous.to)} />
-            <Kpi label="Orders" value={String(data.totals.orders)} change={data.changes.orders} previous={formatPeriod(data.previous.from, data.previous.to)} />
-            <Kpi label="Average order value" value={data.totals.aov === null ? '—' : money(data.totals.aov)} change={data.changes.aov} previous={formatPeriod(data.previous.from, data.previous.to)} />
-            <Kpi label="New customers" value={String(data.totals.newCustomers)} change={data.changes.newCustomers} previous={formatPeriod(data.previous.from, data.previous.to)} />
+            <Kpi label="Revenue" value={money(data.totals.revenue)} change={data.changes.revenue} previous={previous} />
+            <Kpi label="Orders" value={String(data.totals.orders)} change={data.changes.orders} previous={previous} />
+            <Kpi label="Average order value" value={data.totals.aov === null ? '—' : money(data.totals.aov)} change={data.changes.aov} previous={previous} />
+            <Kpi label="New customers" value={String(data.totals.newCustomers)} change={data.changes.newCustomers} previous={previous} />
           </div>
 
           {empty ? (
@@ -151,6 +168,23 @@ export default function AnalyticsPage() {
               <DataTable report={data} />
             </>
           )}
+        </div>
+      )}
+
+      {!problem && insights.error && <p className="alert-error" role="alert">{insights.error}</p>}
+      {!problem && !insights.data && insights.loading && <p className="muted">Loading insights…</p>}
+
+      {!problem && insights.data && (
+        <div className={`insights ${insights.loading ? 'is-loading' : ''}`} aria-busy={insights.loading}>
+          <TopProductsCard report={insights.data} />
+          <TopCustomersCard report={insights.data} />
+          <LowStockCard
+            report={insights.data}
+            thresholdText={stockText}
+            thresholdValid={threshold !== null}
+            onThreshold={setStockText}
+          />
+          <ExportCard from={from} to={to} tz={tz} />
         </div>
       )}
     </>
